@@ -1,0 +1,29 @@
+# SignPath Configuration
+# Documentation: https://about.signpath.io/documentation/artifact-configuration
+
+version: v1
+
+# Artifact configuration for Hash Tools
+artifact-configuration:
+  - id: windows-executable
+    name: Windows Executable
+    description: Hash Tools Windows binary
+    
+    # Define the artifact structure
+    pe-files:
+      - include: "**/*.exe"
+        verification:
+          authenticode:
+            - verify-recursively: false
+    
+    # Signing options
+    signing:
+      policy-slug: release-signing
+      
+# Project metadata
+metadata:
+  product-name: Hash Tools
+  product-version: "${version}"
+  product-description: "Modern File Hash Calculator with SM3 Support"
+  company-name: "Hash Tools Contributors"
+  legal-copyright: "MIT License"
