@@ -1,0 +1,38 @@
+[package]
+name = "hash_tools"
+version = "0.1.0"
+edition = "2021"
+description = "A modern file hash calculator with SM3 (信创) support"
+license = "MIT"
+repository = "https://github.com/example/hash_tools"
+
+[dependencies]
+iced = { version = "0.13.1", features = ["tokio", "advanced", "canvas", "svg"] }
+tokio = { version = "1", features = ["fs", "io-util", "rt-multi-thread", "macros"] }
+rfd = "0.15"
+hex = "0.4"
+sha1 = "0.10"
+sha2 = "0.10"
+sha3 = "0.10"
+md-5 = "0.10"
+blake3 = "1.5"
+anyhow = "1.0"
+thiserror = "2.0"
+sm3 = "0.4.2"
+
+# Windows-specific metadata for executable
+[package.metadata.winres]
+OriginalFilename = "hash_tools.exe"
+ProductName = "Hash Tools"
+FileDescription = "Modern file hash calculator"
+
+# Release profile for smaller binaries
+[profile.release]
+strip = true
+lto = true
+codegen-units = 1
+opt-level = "z"
+
+# Build dependencies (for Windows resource embedding)
+[build-dependencies]
+winresource = "0.1"

@@ -1,0 +1,58 @@
+    Checking hash_tools v0.1.0 (/Users/joe/Downloads/hash_tools)
+error[E0432]: unresolved import `iced::Command`
+ --> src/main.rs:3:37
+  |
+3 |     window, Alignment, Application, Command, Element, Length, Settings, Subscription, Theme,
+  |                                     ^^^^^^^ no `Command` in the root
+  |
+  = help: consider importing this struct instead:
+          std::process::Command
+
+error[E0433]: failed to resolve: could not find `subscription` in `iced`
+   --> src/main.rs:248:15
+    |
+248 |         iced::subscription::events_with(|event, status| {
+    |               ^^^^^^^^^^^^
+    |               |
+    |               could not find `subscription` in `iced`
+    |               help: a struct with a similar name exists (notice the capitalization): `Subscription`
+
+error[E0404]: expected trait, found struct `Application`
+  --> src/main.rs:44:6
+   |
+44 | impl Application for HashApp {
+   |      ^^^^^^^^^^^ not a trait
+
+error[E0433]: failed to resolve: use of undeclared type `Background`
+   --> src/main.rs:241:34
+    |
+241 |                 background: Some(Background::Color(style::colors::BACKGROUND_DARK)),
+    |                                  ^^^^^^^^^^ use of undeclared type `Background`
+    |
+help: consider importing one of these items
+    |
+  1 + use iced::Background;
+    |
+  1 + use iced::theme::palette::Background;
+    |
+
+warning: unused imports: `color` and `text`
+ --> src/style.rs:1:20
+  |
+1 | use iced::{border, color, widget::{container, button, text, text_input}, Background, Color, Shadow, Theme, Vector};
+  |                    ^^^^^                              ^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: type `colors` should have an upper camel case name
+ --> src/style.rs:3:12
+  |
+3 | pub struct colors;
+  |            ^^^^^^ help: convert the identifier to upper camel case (notice the capitalization): `Colors`
+  |
+  = note: `#[warn(non_camel_case_types)]` (part of `#[warn(nonstandard_style)]`) on by default
+
+Some errors have detailed explanations: E0404, E0432, E0433.
+For more information about an error, try `rustc --explain E0404`.
+warning: `hash_tools` (bin "hash_tools") generated 2 warnings
+error: could not compile `hash_tools` (bin "hash_tools") due to 4 previous errors; 2 warnings emitted
