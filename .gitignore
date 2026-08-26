@@ -18,7 +18,7 @@ Thumbs.db
 
 # Environment
 .env
-.env.local
+.env.*
 
 # Logs
 *.log
@@ -27,3 +27,38 @@ Thumbs.db
 *.tmp
 *.temp
 errors.txt
+
+# Local sample files and generated diagnostics reports
+tests/
+test-data/
+samples/
+diagnostics/
+reports/
+*.[dD][iI][aA][gG][nN][oO][sS][tT][iI][cC][sS].*
+
+# Documents may contain customer data, signatures, or personal certificates.
+# Keep even synthetic document fixtures local until explicitly reviewed.
+*.[pP][dD][fF]
+*.[oO][fF][dD]
+
+# Signing output, private keys, certificate bundles, and keystores.
+# Public certificates can still contain personal information.
+certs/
+certificates/
+sign_exe.bat
+*.[pP]12
+*.[pP][fF][xX]
+*.[kK][eE][yY]
+*.[pP][eE][mM]
+*.[cC][eE][rR]
+*.[cC][rR][tT]
+*.[dD][eE][rR]
+*.[cC][sS][rR]
+*.[pP]7[bBcCsS]
+*.[pP]8
+*.[pP][kK][cC][sS]12
+*.[jJ][kK][sS]
+*.[kK][eE][yY][sS][tT][oO][rR][eE]
+id_rsa
+id_ecdsa
+id_ed25519

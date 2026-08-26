@@ -1,13 +1,13 @@
+use anyhow::Context;
+use blake3::Hasher as Blake3Hasher;
+use md5::Md5;
+use sha1::Sha1;
+use sha2::{Digest, Sha256, Sha512};
+use sha3::{Sha3_256, Sha3_512};
+use sm3::Sm3;
 use std::path::Path;
 use tokio::fs::File;
 use tokio::io::AsyncReadExt;
-use sha2::{Sha256, Sha512, Digest};
-use sha3::{Sha3_256, Sha3_512};
-use md5::Md5;
-use sha1::Sha1;
-use blake3::Hasher as Blake3Hasher;
-use sm3::Sm3;
-use anyhow::Context;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Algorithm {
@@ -35,7 +35,7 @@ impl Algorithm {
             Algorithm::Sm3 => "SM3 (信创)",
         }
     }
-    
+
     pub fn all() -> &'static [Algorithm] {
         &[
             Algorithm::Sha256,
@@ -65,73 +65,89 @@ pub async fn compute_hash(path: impl AsRef<Path>, algo: Algorithm) -> anyhow::Re
             let mut hasher = Sha256::new();
             loop {
                 let n = file.read(&mut buffer).await?;
-                if n == 0 { break; }
+                if n == 0 {
+                    break;
+                }
                 hasher.update(&buffer[..n]);
             }
             Ok(hex::encode(hasher.finalize()))
-        },
+        }
         Algorithm::Sha512 => {
             let mut hasher = Sha512::new();
             loop {
                 let n = file.read(&mut buffer).await?;
-                if n == 0 { break; }
+                if n == 0 {
+                    break;
+                }
                 hasher.update(&buffer[..n]);
             }
             Ok(hex::encode(hasher.finalize()))
-        },
+        }
         Algorithm::Sha3_256 => {
             let mut hasher = Sha3_256::new();
             loop {
                 let n = file.read(&mut buffer).await?;
-                if n == 0 { break; }
+                if n == 0 {
+                    break;
+                }
                 hasher.update(&buffer[..n]);
             }
             Ok(hex::encode(hasher.finalize()))
-        },
+        }
         Algorithm::Sha3_512 => {
             let mut hasher = Sha3_512::new();
             loop {
                 let n = file.read(&mut buffer).await?;
-                if n == 0 { break; }
+                if n == 0 {
+                    break;
+                }
                 hasher.update(&buffer[..n]);
             }
             Ok(hex::encode(hasher.finalize()))
-        },
+        }
         Algorithm::Md5 => {
             let mut hasher = Md5::new();
             loop {
                 let n = file.read(&mut buffer).await?;
-                if n == 0 { break; }
+                if n == 0 {
+                    break;
+                }
                 hasher.update(&buffer[..n]);
             }
             Ok(hex::encode(hasher.finalize()))
-        },
+        }
         Algorithm::Sha1 => {
             let mut hasher = Sha1::new();
             loop {
                 let n = file.read(&mut buffer).await?;
-                if n == 0 { break; }
+                if n == 0 {
+                    break;
+                }
                 hasher.update(&buffer[..n]);
             }
             Ok(hex::encode(hasher.finalize()))
-        },
+        }
         Algorithm::Blake3 => {
             let mut hasher = Blake3Hasher::new();
             loop {
                 let n = file.read(&mut buffer).await?;
-                if n == 0 { break; }
+                if n == 0 {
+                    break;
+                }
                 hasher.update(&buffer[..n]);
             }
             Ok(hasher.finalize().to_string())
-        },
+        }
         Algorithm::Sm3 => {
             let mut hasher = Sm3::new();
             loop {
                 let n = file.read(&mut buffer).await?;
-                if n == 0 { break; }
+                if n == 0 {
+                    break;
+                }
                 hasher.update(&buffer[..n]);
             }
             Ok(hex::encode(hasher.finalize()))
-        },
+        }
     }
 }

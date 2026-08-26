@@ -1,0 +1,647 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hash Tools 使用指南 - 哈希校验与PDF签名验证</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Inter:wght@400;600;800&display=swap');
+
+        :root {
+            --bg: #0a0a0f;
+            --bg-card: #12121a;
+            --bg-code: #1a1a24;
+            --text: #e4e4e7;
+            --text-muted: #71717a;
+            --accent-orange: #f97316;
+            --accent-blue: #3b82f6;
+            --accent-green: #22c55e;
+            --accent-purple: #a855f7;
+            --accent-red: #ef4444;
+            --accent-cyan: #06b6d4;
+            --border: #27272a;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.7;
+            overflow-x: hidden;
+        }
+
+        .container {
+            max-width: 1100px;
+            margin: 0 auto;
+            padding: 3rem 2rem;
+        }
+
+        /* Header */
+        header {
+            text-align: center;
+            padding: 4rem 0 3rem;
+            border-bottom: 1px solid var(--border);
+            position: relative;
+        }
+
+        header::before {
+            content: "";
+            position: absolute;
+            top: 0;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 600px;
+            height: 300px;
+            background: radial-gradient(ellipse, rgba(6, 182, 212, 0.1) 0%, transparent 70%);
+            z-index: -1;
+        }
+
+        .logo {
+            width: 80px;
+            height: 80px;
+            border-radius: 20px;
+            margin-bottom: 1.5rem;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+        }
+
+        h1 {
+            font-size: 2.5rem;
+            background: linear-gradient(90deg, var(--accent-cyan), var(--accent-blue));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 0.5rem;
+        }
+
+        .tagline {
+            color: var(--text-muted);
+            font-size: 1.1rem;
+        }
+
+        .badge-row {
+            margin-top: 1.5rem;
+            display: flex;
+            justify-content: center;
+            gap: 0.75rem;
+            flex-wrap: wrap;
+        }
+
+        .badge {
+            font-size: 0.75rem;
+            padding: 0.4rem 0.9rem;
+            border-radius: 99px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .badge-hash {
+            background: rgba(6, 182, 212, 0.15);
+            color: var(--accent-cyan);
+            border: 1px solid rgba(6, 182, 212, 0.3);
+        }
+
+        .badge-security {
+            background: rgba(34, 197, 94, 0.15);
+            color: var(--accent-green);
+            border: 1px solid rgba(34, 197, 94, 0.3);
+        }
+
+        .badge-pdf {
+            background: rgba(239, 68, 68, 0.15);
+            color: var(--accent-red);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+        }
+
+        /* Section */
+        section {
+            padding: 4rem 0;
+            border-bottom: 1px solid var(--border);
+        }
+
+        section:last-of-type {
+            border-bottom: none;
+        }
+
+        h2 {
+            font-size: 1.75rem;
+            margin-bottom: 1.5rem;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        h2 .icon {
+            width: 32px;
+            height: 32px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        h3 {
+            font-size: 1.25rem;
+            color: var(--accent-blue);
+            margin: 2rem 0 1rem;
+        }
+
+        p {
+            margin-bottom: 1rem;
+            color: #a1a1aa;
+        }
+
+        strong {
+            color: var(--text);
+        }
+
+        /* Code Block */
+        pre {
+            background: var(--bg-code);
+            border-radius: 12px;
+            padding: 1.5rem;
+            overflow-x: auto;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.85rem;
+            line-height: 1.6;
+            margin: 1.5rem 0;
+            border: 1px solid var(--border);
+        }
+
+        code {
+            font-family: 'JetBrains Mono', monospace;
+            background: var(--bg-code);
+            padding: 0.2rem 0.4rem;
+            border-radius: 4px;
+        }
+
+        /* Hash Display */
+        .hash-display {
+            background: var(--bg-code);
+            border: 1px solid var(--accent-cyan);
+            border-radius: 8px;
+            padding: 1rem 1.5rem;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.9rem;
+            color: var(--accent-cyan);
+            word-break: break-all;
+            margin: 1rem 0;
+        }
+
+        /* Steps */
+        .steps {
+            counter-reset: step;
+            list-style: none;
+            padding: 0;
+        }
+
+        .steps li {
+            counter-increment: step;
+            padding: 1.5rem;
+            margin: 1rem 0;
+            background: var(--bg-card);
+            border-radius: 12px;
+            border-left: 3px solid var(--accent-blue);
+            position: relative;
+            padding-left: 4rem;
+        }
+
+        .steps li::before {
+            content: counter(step);
+            position: absolute;
+            left: 1.5rem;
+            top: 1.5rem;
+            width: 28px;
+            height: 28px;
+            background: var(--accent-blue);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 0.9rem;
+        }
+
+        /* Result Cards */
+        .result-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin: 1.5rem 0;
+        }
+
+        .result-card {
+            background: var(--bg-card);
+            border-radius: 12px;
+            padding: 1.5rem;
+            text-align: center;
+        }
+
+        .result-card.valid {
+            border: 2px solid var(--accent-green);
+        }
+
+        .result-card.hash-ok {
+            border: 2px solid var(--accent-orange);
+        }
+
+        .result-card.invalid {
+            border: 2px solid var(--accent-red);
+        }
+
+        .result-icon {
+            font-size: 2rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .result-card h4 {
+            margin-bottom: 0.5rem;
+        }
+
+        .result-card p {
+            font-size: 0.85rem;
+            margin: 0;
+        }
+
+        /* Diagram */
+        .diagram-container {
+            background: #0d0d12;
+            border-radius: 16px;
+            padding: 2rem;
+            margin: 2rem 0;
+            border: 1px solid var(--border);
+            display: flex;
+            justify-content: center;
+            overflow-x: auto;
+        }
+
+        /* Feature Grid */
+        .feature-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 1.5rem;
+            margin: 2rem 0;
+        }
+
+        .feature-card {
+            background: var(--bg-card);
+            border-radius: 12px;
+            padding: 1.5rem;
+            border-top: 3px solid var(--accent-blue);
+        }
+
+        .feature-card h4 {
+            margin-bottom: 0.5rem;
+        }
+
+        /* Animations */
+        @keyframes flow-right {
+            0% {
+                stroke-dashoffset: 20;
+            }
+
+            100% {
+                stroke-dashoffset: 0;
+            }
+        }
+
+        .flow-anim {
+            stroke-dasharray: 5 5;
+            animation: flow-right 0.8s linear infinite;
+        }
+
+        /* Table */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 1rem 0;
+        }
+
+        th,
+        td {
+            padding: 0.75rem 1rem;
+            border: 1px solid var(--border);
+            text-align: left;
+        }
+
+        th {
+            background: var(--bg-card);
+            color: var(--text);
+        }
+
+        td {
+            color: var(--text-muted);
+        }
+
+        /* Footer */
+        footer {
+            text-align: center;
+            padding: 3rem 0;
+            color: var(--text-muted);
+            font-size: 0.9rem;
+        }
+
+        footer a {
+            color: var(--accent-blue);
+            text-decoration: none;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            h1 {
+                font-size: 2rem;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <header>
+        <div class="container">
+            <img src="../assets/icon.png" alt="Hash Tools" class="logo">
+            <h1>Hash Tools 使用指南</h1>
+            <p class="tagline">文件完整性校验 · 存证报告比对 · PDF 数字签名验证</p>
+            <div class="badge-row">
+                <span class="badge badge-hash">SM3 / SHA-256 / BLAKE3</span>
+                <span class="badge badge-security">SM3withSM2 验证</span>
+                <span class="badge badge-pdf">PDF Signature ✓</span>
+            </div>
+        </div>
+    </header>
+
+    <div class="container">
+
+        <!-- Section 1: Hash Basics -->
+        <section>
+            <h2>
+                <span class="icon" style="background: rgba(6, 182, 212, 0.15);">
+                    <svg width="18" height="18" fill="none" stroke="#06b6d4" stroke-width="2">
+                        <path d="M12 2L2 7l10 5 10-5-10-5ZM2 17l10 5 10-5M2 12l10 5 10-5" />
+                    </svg>
+                </span>
+                哈希算法与文件校验
+            </h2>
+            <p><strong>哈希函数（Hash Function）</strong>是一种将任意长度的数据映射为固定长度摘要的单向函数。Hash Tools 支持 7 种主流算法：</p>
+
+            <table>
+                <thead>
+                    <tr>
+                        <th>算法</th>
+                        <th>输出长度</th>
+                        <th>适用场景</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><code>SHA-256</code></td>
+                        <td>256 bit (64 hex)</td>
+                        <td>通用完整性校验，推荐默认</td>
+                    </tr>
+                    <tr>
+                        <td><code>SHA-512</code></td>
+                        <td>512 bit (128 hex)</td>
+                        <td>高安全要求场景</td>
+                    </tr>
+                    <tr>
+                        <td><code style="color: var(--accent-orange);">SM3 (信创)</code></td>
+                        <td>256 bit (64 hex)</td>
+                        <td>国家密码标准，政企合规</td>
+                    </tr>
+                    <tr>
+                        <td><code>BLAKE3</code></td>
+                        <td>256 bit (可扩展)</td>
+                        <td>高性能场景，速度最快</td>
+                    </tr>
+                    <tr>
+                        <td><code>SHA3-256/512</code></td>
+                        <td>256/512 bit</td>
+                        <td>NIST 最新标准</td>
+                    </tr>
+                </tbody>
+            </table>
+        </section>
+
+        <!-- Section 2: File Hash Verification -->
+        <section>
+            <h2>
+                <span class="icon" style="background: rgba(34, 197, 94, 0.15);">
+                    <svg width="18" height="18" fill="none" stroke="#22c55e" stroke-width="2">
+                        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+                    </svg>
+                </span>
+                文件校验与存证比对
+            </h2>
+            <p>使用 Hash Tools 进行文件完整性验证并与<strong>签署完成证明（Certificate of Completion）</strong>比对：</p>
+
+            <ol class="steps">
+                <li>
+                    <strong>拖入文件</strong><br>
+                    <span style="color: var(--text-muted);">将需要验证的文件拖入 Hash Tools 窗口。</span>
+                </li>
+                <li>
+                    <strong>选择算法</strong><br>
+                    <span style="color: var(--text-muted);">根据存证报告中记录的算法类型选择对应的哈希算法。</span>
+                </li>
+                <li>
+                    <strong>获取计算结果</strong><br>
+                    <span style="color: var(--text-muted);">工具自动计算文件哈希：</span>
+                    <div class="hash-display">
+                        e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+                    </div>
+                </li>
+                <li>
+                    <strong>粘贴对比</strong><br>
+                    <span style="color: var(--text-muted);">将存证报告中的 Document Hash 粘贴到 "Compare with" 输入框，系统自动比对。</span>
+                </li>
+            </ol>
+        </section>
+
+        <!-- Section 3: PDF Signature Verification (NOW COMPLETE) -->
+        <section>
+            <h2>
+                <span class="icon" style="background: rgba(239, 68, 68, 0.15);">
+                    <svg width="18" height="18" fill="none" stroke="#ef4444" stroke-width="2">
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                        <path d="M14 2v6h6M16 13H8M16 17H8M10 9H8" />
+                    </svg>
+                </span>
+                PDF 数字签名验证 <span style="color: var(--accent-green); font-size: 0.8em;">✓ 已实现</span>
+            </h2>
+            <p>Hash Tools 现已支持完整的 PDF 数字签名验证，特别是<strong style="color: var(--accent-orange);">国密 SM3withSM2 算法</strong>。
+            </p>
+
+            <h3>验证流程</h3>
+
+            <div class="diagram-container">
+                <svg width="800" height="120" viewBox="0 0 800 120">
+                    <!-- PDF File -->
+                    <rect x="20" y="30" width="100" height="60" rx="8" fill="#1e1e2e" stroke="#ef4444"
+                        stroke-width="2" />
+                    <text x="70" y="55" text-anchor="middle" fill="#ef4444" font-size="11" font-weight="bold">PDF
+                        File</text>
+                    <text x="70" y="72" text-anchor="middle" fill="#71717a" font-size="9">Signed Document</text>
+
+                    <!-- Arrow 1 -->
+                    <line x1="130" y1="60" x2="170" y2="60" stroke="#71717a" stroke-width="2" class="flow-anim" />
+
+                    <!-- Extract ByteRange -->
+                    <rect x="180" y="25" width="120" height="70" rx="8" fill="#1e1e2e" stroke="#a855f7"
+                        stroke-width="2" />
+                    <text x="240" y="50" text-anchor="middle" fill="#a855f7" font-size="10" font-weight="bold">提取
+                        ByteRange</text>
+                    <text x="240" y="68" text-anchor="middle" fill="#71717a" font-size="9">+ PKCS#7 解析</text>
+                    <text x="240" y="82" text-anchor="middle" fill="#71717a" font-size="8">(DER/BER)</text>
+
+                    <!-- Arrow 2 -->
+                    <line x1="310" y1="60" x2="350" y2="60" stroke="#71717a" stroke-width="2" class="flow-anim" />
+
+                    <!-- Hash -->
+                    <rect x="360" y="30" width="120" height="60" rx="8" fill="#1e1e2e" stroke="#f97316"
+                        stroke-width="2" />
+                    <text x="420" y="55" text-anchor="middle" fill="#f97316" font-size="10"
+                        font-weight="bold">计算哈希</text>
+                    <text x="420" y="72" text-anchor="middle" fill="#71717a" font-size="9">SM3 / SHA-256</text>
+
+                    <!-- Arrow 3 -->
+                    <line x1="490" y1="60" x2="530" y2="60" stroke="#71717a" stroke-width="2" class="flow-anim" />
+
+                    <!-- Verify -->
+                    <rect x="540" y="30" width="120" height="60" rx="8" fill="#052e16" stroke="#22c55e"
+                        stroke-width="2" />
+                    <text x="600" y="50" text-anchor="middle" fill="#22c55e" font-size="10"
+                        font-weight="bold">验证签名</text>
+                    <text x="600" y="68" text-anchor="middle" fill="#71717a" font-size="9">Hash + SM2</text>
+
+                    <!-- Arrow 4 -->
+                    <line x1="670" y1="60" x2="710" y2="60" stroke="#22c55e" stroke-width="2" />
+
+                    <!-- Result -->
+                    <circle cx="745" cy="60" r="30" fill="#1e1e2e" stroke="#3b82f6" stroke-width="2" />
+                    <text x="745" y="55" text-anchor="middle" fill="#3b82f6" font-size="9" font-weight="bold">验证</text>
+                    <text x="745" y="68" text-anchor="middle" fill="#3b82f6" font-size="9" font-weight="bold">结果</text>
+                </svg>
+            </div>
+
+            <h3>验证结果说明</h3>
+
+            <div class="result-grid">
+                <div class="result-card valid">
+                    <div class="result-icon">✓</div>
+                    <h4 style="color: var(--accent-green);">[OK] Valid</h4>
+                    <p>哈希匹配 + 密码学签名验证通过<br>文档完整且签名者身份确认</p>
+                </div>
+
+                <div class="result-card hash-ok">
+                    <div class="result-icon">~</div>
+                    <h4 style="color: var(--accent-orange);">[~] Hash OK</h4>
+                    <p>哈希匹配但签名验证未通过<br>文档未被篡改，签名需进一步确认</p>
+                </div>
+
+                <div class="result-card invalid">
+                    <div class="result-icon">✗</div>
+                    <h4 style="color: var(--accent-red);">[X] Invalid</h4>
+                    <p>哈希不匹配<br><strong>文档已被修改！</strong></p>
+                </div>
+            </div>
+
+            <h3>智能特性</h3>
+
+            <div class="feature-grid">
+                <div class="feature-card" style="border-color: var(--accent-purple);">
+                    <h4 style="color: var(--accent-purple);">🧠 三级算法检测</h4>
+                    <p>自动从 PDF SubFilter → PKCS#7 OID → Hash 长度推断签名算法</p>
+                </div>
+
+                <div class="feature-card" style="border-color: var(--accent-cyan);">
+                    <h4 style="color: var(--accent-cyan);">📦 DER/BER 双模式</h4>
+                    <p>自动降级处理 BER 编码（兼容 Apple Developer 证书）</p>
+                </div>
+
+                <div class="feature-card" style="border-color: var(--accent-green);">
+                    <h4 style="color: var(--accent-green);">📜 证书信息提取</h4>
+                    <p>智能显示签名者名称（从证书 CN 或 PDF 字段）</p>
+                </div>
+
+                <div class="feature-card" style="border-color: var(--accent-orange);">
+                    <h4 style="color: var(--accent-orange);">📄 HTML 报告导出</h4>
+                    <p>一键生成专业诊断报告，满足审计需求</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Section 4: Roadmap -->
+        <section>
+            <h2>
+                <span class="icon" style="background: rgba(168, 85, 247, 0.15);">
+                    <svg width="18" height="18" fill="none" stroke="#a855f7" stroke-width="2">
+                        <path
+                            d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
+                    </svg>
+                </span>
+                功能路线图
+            </h2>
+
+            <table>
+                <thead>
+                    <tr>
+                        <th>版本</th>
+                        <th>功能特性</th>
+                        <th>状态</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><code>v0.1.0</code></td>
+                        <td>文件哈希计算、多算法支持、SM3 信创</td>
+                        <td><span style="color: var(--accent-green);">✓ 已发布</span></td>
+                    </tr>
+                    <tr>
+                        <td><code>v0.2.0</code></td>
+                        <td>PDF 签名 ByteRange 解析与哈希验证</td>
+                        <td><span style="color: var(--accent-green);">✓ 已完成</span></td>
+                    </tr>
+                    <tr>
+                        <td><code>v0.3.0</code></td>
+                        <td>SM3withSM2 国密签名完整验证</td>
+                        <td><span style="color: var(--accent-green);">✓ 已完成</span></td>
+                    </tr>
+                    <tr>
+                        <td><code>v0.4.0</code></td>
+                        <td>智能算法检测 + DER/BER 双模式</td>
+                        <td><span style="color: var(--accent-green);">✓ 已完成</span></td>
+                    </tr>
+                    <tr>
+                        <td><code>v0.5.0</code></td>
+                        <td>HTML 诊断报告导出</td>
+                        <td><span style="color: var(--accent-green);">✓ 已完成</span></td>
+                    </tr>
+                    <tr>
+                        <td><code>v1.0.0</code></td>
+                        <td>完整 PDF 签名验证工具套件</td>
+                        <td><span style="color: var(--accent-orange);">🚧 整合中</span></td>
+                    </tr>
+                </tbody>
+            </table>
+        </section>
+
+    </div>
+
+    <footer>
+        <p>Hash Tools · 使用指南</p>
+        <p style="margin-top: 0.5rem;">
+            <a href="product_overview.html">📊 产品介绍</a> ·
+            <a href="technical_implementation.html">⚙️ 技术文档</a>
+        </p>
+        <p style="margin-top: 0.5rem; font-size: 0.8rem;">Updated 2024-12-26</p>
+    </footer>
+
+</body>
+
+</html>
