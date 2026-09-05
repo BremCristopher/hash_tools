@@ -1,0 +1,562 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hash Tools - 国密签名验证解决方案</title>
+    <style>
+        :root {
+            --bg-primary: #0a0e17;
+            --bg-secondary: #111827;
+            --bg-card: rgba(17, 24, 39, 0.8);
+            --text-primary: #f3f4f6;
+            --text-secondary: #9ca3af;
+            --accent-blue: #3b82f6;
+            --accent-green: #10b981;
+            --accent-purple: #8b5cf6;
+            --accent-orange: #f59e0b;
+            --gradient-1: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            line-height: 1.7;
+        }
+
+        .hero {
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+            padding: 2rem;
+            background: radial-gradient(ellipse at top, #1a1f35 0%, var(--bg-primary) 60%);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .hero::before {
+            content: '';
+            position: absolute;
+            width: 600px;
+            height: 600px;
+            background: var(--gradient-1);
+            border-radius: 50%;
+            filter: blur(150px);
+            opacity: 0.15;
+            top: -200px;
+            right: -100px;
+        }
+
+        .hero-badge {
+            background: var(--gradient-1);
+            padding: 0.5rem 1.5rem;
+            border-radius: 20px;
+            font-size: 0.9rem;
+            font-weight: 500;
+            margin-bottom: 2rem;
+            display: inline-block;
+        }
+
+        h1 {
+            font-size: 3.5rem;
+            font-weight: 800;
+            margin-bottom: 1.5rem;
+            background: linear-gradient(90deg, #fff, #a5b4fc);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .hero-subtitle {
+            font-size: 1.3rem;
+            color: var(--text-secondary);
+            max-width: 750px;
+            margin-bottom: 3rem;
+        }
+
+        .hero-subtitle strong {
+            color: var(--accent-green);
+        }
+
+        .stats-row {
+            display: flex;
+            gap: 3rem;
+            margin-top: 3rem;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+
+        .stat-item {
+            text-align: center;
+        }
+
+        .stat-value {
+            font-size: 2.5rem;
+            font-weight: 700;
+            background: var(--gradient-1);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .stat-label {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+        }
+
+        section {
+            padding: 5rem 2rem;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        h2 {
+            font-size: 2.2rem;
+            margin-bottom: 1rem;
+            text-align: center;
+        }
+
+        .section-subtitle {
+            color: var(--text-secondary);
+            text-align: center;
+            max-width: 600px;
+            margin: 0 auto 3rem;
+        }
+
+        .problem-section {
+            background: var(--bg-secondary);
+        }
+
+        .problem-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 2rem;
+        }
+
+        .problem-card {
+            background: var(--bg-card);
+            border-radius: 16px;
+            padding: 2rem;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .problem-card .icon {
+            font-size: 2.5rem;
+            margin-bottom: 1rem;
+        }
+
+        .problem-card h3 {
+            font-size: 1.2rem;
+            margin-bottom: 0.75rem;
+        }
+
+        .problem-card p {
+            color: var(--text-secondary);
+            font-size: 0.95rem;
+        }
+
+        .feature-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 2rem;
+        }
+
+        .feature-card {
+            background: var(--bg-card);
+            border-radius: 16px;
+            padding: 2rem;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            transition: transform 0.3s, box-shadow 0.3s;
+        }
+
+        .feature-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+        }
+
+        .feature-card .badge {
+            font-size: 0.75rem;
+            padding: 0.25rem 0.75rem;
+            border-radius: 12px;
+            display: inline-block;
+            margin-bottom: 1rem;
+        }
+
+        .badge-green {
+            background: rgba(16, 185, 129, 0.2);
+            color: var(--accent-green);
+        }
+
+        .badge-blue {
+            background: rgba(59, 130, 246, 0.2);
+            color: var(--accent-blue);
+        }
+
+        .badge-purple {
+            background: rgba(139, 92, 246, 0.2);
+            color: var(--accent-purple);
+        }
+
+        .badge-orange {
+            background: rgba(245, 158, 11, 0.2);
+            color: var(--accent-orange);
+        }
+
+        .feature-card h3 {
+            font-size: 1.3rem;
+            margin-bottom: 0.75rem;
+        }
+
+        .feature-card p {
+            color: var(--text-secondary);
+        }
+
+        .tech-section {
+            background: var(--bg-primary);
+        }
+
+        .tech-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 2rem;
+        }
+
+        .tech-table th,
+        .tech-table td {
+            padding: 1rem 1.5rem;
+            text-align: left;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .tech-table th {
+            background: var(--bg-secondary);
+            font-weight: 600;
+        }
+
+        .tech-table tr:hover {
+            background: rgba(255, 255, 255, 0.02);
+        }
+
+        .check {
+            color: var(--accent-green);
+            font-weight: 600;
+        }
+
+        .cross {
+            color: #ef4444;
+        }
+
+        .intelligence-section {
+            background: linear-gradient(180deg, var(--bg-secondary) 0%, var(--bg-primary) 100%);
+        }
+
+        .intelligence-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 1.5rem;
+        }
+
+        .intelligence-card {
+            background: rgba(99, 102, 241, 0.1);
+            border: 1px solid rgba(99, 102, 241, 0.3);
+            border-radius: 12px;
+            padding: 1.5rem;
+            text-align: center;
+        }
+
+        .intelligence-card .number {
+            font-size: 2rem;
+            font-weight: 800;
+            color: var(--accent-purple);
+            margin-bottom: 0.5rem;
+        }
+
+        .intelligence-card h4 {
+            margin-bottom: 0.5rem;
+        }
+
+        .intelligence-card p {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+        }
+
+        .cta-section {
+            text-align: center;
+            padding: 5rem 2rem;
+            background: var(--gradient-1);
+        }
+
+        .cta-section h2 {
+            color: #fff;
+        }
+
+        .cta-section p {
+            color: rgba(255, 255, 255, 0.8);
+            margin-bottom: 2rem;
+        }
+
+        .cta-button {
+            display: inline-block;
+            background: #fff;
+            color: #1a1f35;
+            padding: 1rem 3rem;
+            border-radius: 12px;
+            font-weight: 600;
+            font-size: 1.1rem;
+            text-decoration: none;
+            transition: transform 0.3s;
+        }
+
+        .cta-button:hover {
+            transform: scale(1.05);
+        }
+
+        footer {
+            background: var(--bg-secondary);
+            padding: 2rem;
+            text-align: center;
+            color: var(--text-secondary);
+        }
+
+        @media (max-width: 768px) {
+            h1 {
+                font-size: 2.5rem;
+            }
+
+            .stats-row {
+                flex-direction: column;
+                gap: 2rem;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <header class="hero">
+        <img src="../assets/icon.png" alt="Hash Tools"
+            style="width: 80px; height: 80px; border-radius: 20px; margin-bottom: 1.5rem; box-shadow: 0 8px 24px rgba(0,0,0,0.4);">
+        <span class="hero-badge">🔐 企业级数字签名验证解决方案</span>
+        <h1>Hash Tools</h1>
+        <p class="hero-subtitle">
+            唯一支持 <strong>SM3withSM2 国密算法</strong> 完整验证的跨平台工具<br>
+            智能算法检测 + BER/DER 双模式解析 + 篡改实时检测
+        </p>
+
+        <div class="stats-row">
+            <div class="stat-item">
+                <div class="stat-value">7+</div>
+                <div class="stat-label">哈希算法支持</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-value">4</div>
+                <div class="stat-label">签名算法验证</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-value">3</div>
+                <div class="stat-label">跨平台支持</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-value">0</div>
+                <div class="stat-label">外部 CSP 依赖</div>
+            </div>
+        </div>
+    </header>
+
+    <section class="problem-section">
+        <h2>❌ 行业痛点</h2>
+        <p class="section-subtitle">
+            企业在使用国密签名 PDF 时面临的真实挑战
+        </p>
+
+        <div class="problem-grid">
+            <div class="problem-card">
+                <div class="icon">🔏</div>
+                <h3>Adobe 无法验证国密</h3>
+                <p>Adobe Acrobat 不支持 SM3withSM2 算法，显示"签名无效"或"未知签名格式"。</p>
+            </div>
+
+            <div class="problem-card">
+                <div class="icon">💻</div>
+                <h3>OS 层面缺乏支持</h3>
+                <p>Windows/macOS 原生不包含国密 CSP，需要安装第三方驱动，部署成本高。</p>
+            </div>
+
+            <div class="problem-card">
+                <div class="icon">🔢</div>
+                <h3>编码兼容性问题</h3>
+                <p>Apple Developer 等证书使用 BER 编码，常规工具只支持 DER，导致解析失败。</p>
+            </div>
+
+            <div class="problem-card">
+                <div class="icon">🔍</div>
+                <h3>篡改检测能力缺失</h3>
+                <p>常规工具无法提供 ByteRange 级别的完整性验证和详细诊断信息。</p>
+            </div>
+        </div>
+    </section>
+
+    <section>
+        <h2>✅ 核心功能</h2>
+        <p class="section-subtitle">
+            Hash Tools 提供完整的签名验证解决方案
+        </p>
+
+        <div class="feature-grid">
+            <div class="feature-card">
+                <span class="badge badge-green">核心验证</span>
+                <h3>SM3withSM2 完整验证</h3>
+                <p>两阶段验证：messageDigest 哈希比对 + SM2 椭圆曲线密码学签名验证，与 CA 标准一致。</p>
+            </div>
+
+            <div class="feature-card">
+                <span class="badge badge-blue">智能检测</span>
+                <h3>三级算法探测</h3>
+                <p>优先级：PDF SubFilter → PKCS#7 OID → Hash 长度推断。自动适配各类签名格式。</p>
+            </div>
+
+            <div class="feature-card">
+                <span class="badge badge-purple">编码兼容</span>
+                <h3>DER/BER 双模式</h3>
+                <p>自动检测编码格式，DER 解析失败时智能降级到 BER 二进制搜索，兼容 Apple 证书。</p>
+            </div>
+
+            <div class="feature-card">
+                <span class="badge badge-orange">篡改检测</span>
+                <h3>ByteRange 完整性</h3>
+                <p>实时验证文档完整性，任何内容修改都会被检测并标记为 Invalid。</p>
+            </div>
+
+            <div class="feature-card">
+                <span class="badge badge-green">多算法哈希</span>
+                <h3>7+ 哈希算法</h3>
+                <p>SHA-256, SHA-512, SHA3, SM3, BLAKE3, SHA-1, MD5。满足各类合规需求。</p>
+            </div>
+
+            <div class="feature-card">
+                <span class="badge badge-blue">专业报告</span>
+                <h3>HTML 诊断导出</h3>
+                <p>一键生成专业报告，包含哈希值、证书信息、OID 详情，满足审计需求。</p>
+            </div>
+        </div>
+    </section>
+
+    <section class="intelligence-section">
+        <h2>🧠 验证逻辑的智能性</h2>
+        <p class="section-subtitle">
+            多层降级机制确保最大兼容性
+        </p>
+
+        <div class="intelligence-grid">
+            <div class="intelligence-card">
+                <div class="number">1</div>
+                <h4>PDF SubFilter</h4>
+                <p>首先检查 PDF 签名字典的 /SubFilter 字段</p>
+            </div>
+
+            <div class="intelligence-card">
+                <div class="number">2</div>
+                <h4>PKCS#7 OID</h4>
+                <p>解析 SignerInfo 中的签名算法 OID</p>
+            </div>
+
+            <div class="intelligence-card">
+                <div class="number">3</div>
+                <h4>Hash 长度</h4>
+                <p>从 messageDigest 长度推断算法类型</p>
+            </div>
+
+            <div class="intelligence-card">
+                <div class="number">4</div>
+                <h4>BER 降级</h4>
+                <p>DER 失败时自动切换二进制搜索</p>
+            </div>
+        </div>
+    </section>
+
+    <section class="tech-section">
+        <h2>📊 竞品对比</h2>
+        <p class="section-subtitle">
+            Hash Tools vs 行业标准工具
+        </p>
+
+        <table class="tech-table">
+            <thead>
+                <tr>
+                    <th>功能</th>
+                    <th>Hash Tools</th>
+                    <th>Adobe Acrobat</th>
+                    <th>福昕阅读器</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>SM3withSM2 验证</td>
+                    <td><span class="check">✓ 完整支持</span></td>
+                    <td><span class="cross">✗ 不支持</span></td>
+                    <td><span class="check">✓ 需CSP</span></td>
+                </tr>
+                <tr>
+                    <td>无需安装 CSP/驱动</td>
+                    <td><span class="check">✓ 内置实现</span></td>
+                    <td><span class="cross">✗ 需要</span></td>
+                    <td><span class="cross">✗ 需要</span></td>
+                </tr>
+                <tr>
+                    <td>BER 编码支持</td>
+                    <td><span class="check">✓ 自动降级</span></td>
+                    <td><span class="check">✓ 支持</span></td>
+                    <td><span class="check">✓ 支持</span></td>
+                </tr>
+                <tr>
+                    <td>智能算法检测</td>
+                    <td><span class="check">✓ 三级探测</span></td>
+                    <td><span class="cross">✗ 固定</span></td>
+                    <td><span class="cross">✗ 固定</span></td>
+                </tr>
+                <tr>
+                    <td>跨平台</td>
+                    <td><span class="check">✓ Win/Mac/Linux</span></td>
+                    <td><span class="check">✓ Win/Mac</span></td>
+                    <td><span class="check">✓ 全平台</span></td>
+                </tr>
+                <tr>
+                    <td>HTML 诊断报告</td>
+                    <td><span class="check">✓ 专业报告</span></td>
+                    <td><span class="cross">✗ 无</span></td>
+                    <td><span class="cross">✗ 无</span></td>
+                </tr>
+                <tr>
+                    <td>开源可审计</td>
+                    <td><span class="check">✓ MIT License</span></td>
+                    <td><span class="cross">✗ 闭源</span></td>
+                    <td><span class="cross">✗ 闭源</span></td>
+                </tr>
+            </tbody>
+        </table>
+    </section>
+
+    <section class="cta-section">
+        <h2>立即体验</h2>
+        <p>下载 Hash Tools，解锁智能签名验证能力</p>
+        <a href="https://github.com/releases" class="cta-button">获取最新版本</a>
+    </section>
+
+    <footer>
+        <p>Hash Tools © 2024 | Powered by Rust + libsm + iced</p>
+        <p style="margin-top: 0.5rem; font-size: 0.85rem;">
+            <a href="technical_implementation.html" style="color: var(--accent-blue); text-decoration: none;">📚
+                技术实现文档</a>
+        </p>
+    </footer>
+</body>
+
+</html>

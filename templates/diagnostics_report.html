@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PDF签名诊断报告</title>
+    <style>
+        :root {
+            --bg-primary: #0d1117;
+            --bg-secondary: #161b22;
+            --bg-tertiary: #21262d;
+            --text-primary: #e6edf3;
+            --text-secondary: #8b949e;
+            --accent-green: #3fb950;
+            --accent-red: #f85149;
+            --accent-yellow: #d29922;
+            --accent-blue: #58a6ff;
+            --accent-purple: #a371f7;
+            --border-color: #30363d;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            line-height: 1.6;
+            padding: 2rem;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 2rem;
+            padding: 2rem;
+            background: linear-gradient(135deg, var(--bg-secondary), var(--bg-tertiary));
+            border-radius: 12px;
+            border: 1px solid var(--border-color);
+        }
+
+        h1 {
+            font-size: 2rem;
+            margin-bottom: 0.5rem;
+            background: linear-gradient(90deg, var(--accent-blue), var(--accent-purple));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .meta {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+        }
+
+        .file-path {
+            font-family: 'SF Mono', Consolas, monospace;
+            color: var(--accent-blue);
+            word-break: break-all;
+        }
+
+        .signature-card {
+            background: var(--bg-secondary);
+            border-radius: 12px;
+            border: 1px solid var(--border-color);
+            margin-bottom: 1.5rem;
+            overflow: hidden;
+        }
+
+        .signature-header {
+            padding: 1rem 1.5rem;
+            background: var(--bg-tertiary);
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .signature-title {
+            font-size: 1.2rem;
+            font-weight: 600;
+        }
+
+        .status-badge {
+            padding: 0.25rem 0.75rem;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            font-weight: 500;
+        }
+
+        .status-valid {
+            background: rgba(63, 185, 80, 0.2);
+            color: var(--accent-green);
+        }
+
+        .status-invalid {
+            background: rgba(248, 81, 73, 0.2);
+            color: var(--accent-red);
+        }
+
+        .status-warning {
+            background: rgba(210, 153, 34, 0.2);
+            color: var(--accent-yellow);
+        }
+
+        .signature-body {
+            padding: 1.5rem;
+        }
+
+        .info-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .info-item {
+            background: var(--bg-tertiary);
+            padding: 1rem;
+            border-radius: 8px;
+        }
+
+        .info-label {
+            color: var(--text-secondary);
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 0.25rem;
+        }
+
+        .info-value {
+            font-size: 1rem;
+            word-break: break-all;
+        }
+
+        .hash-section {
+            margin-top: 1.5rem;
+        }
+
+        .section-title {
+            font-size: 1rem;
+            color: var(--text-secondary);
+            margin-bottom: 0.75rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .hash-row {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            padding: 0.75rem;
+            background: var(--bg-tertiary);
+            border-radius: 6px;
+            margin-bottom: 0.5rem;
+        }
+
+        .hash-label {
+            min-width: 120px;
+            font-weight: 500;
+        }
+
+        .hash-label.doc {
+            color: var(--accent-blue);
+        }
+
+        .hash-label.sig {
+            color: var(--accent-purple);
+        }
+
+        .hash-label.md {
+            color: var(--accent-yellow);
+        }
+
+        .hash-label.calc {
+            color: var(--accent-green);
+        }
+
+        .hash-label.embed {
+            color: #ffa657;
+        }
+
+        .hash-value {
+            font-family: 'SF Mono', Consolas, monospace;
+            font-size: 0.9rem;
+            flex: 1;
+            word-break: break-all;
+        }
+
+        .verification-result {
+            padding: 1rem;
+            border-radius: 8px;
+            margin-top: 1rem;
+        }
+
+        .verification-valid {
+            background: rgba(63, 185, 80, 0.1);
+            border: 1px solid var(--accent-green);
+        }
+
+        .verification-invalid {
+            background: rgba(248, 81, 73, 0.1);
+            border: 1px solid var(--accent-red);
+        }
+
+        .verification-warning {
+            background: rgba(210, 153, 34, 0.1);
+            border: 1px solid var(--accent-yellow);
+        }
+
+        .verification-title {
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .verification-valid .verification-title {
+            color: var(--accent-green);
+        }
+
+        .verification-invalid .verification-title {
+            color: var(--accent-red);
+        }
+
+        .verification-warning .verification-title {
+            color: var(--accent-yellow);
+        }
+
+        .oid-section {
+            margin-top: 1.5rem;
+        }
+
+        .oid-list {
+            list-style: none;
+            background: var(--bg-tertiary);
+            border-radius: 8px;
+            padding: 1rem;
+        }
+
+        .oid-item {
+            padding: 0.5rem 0;
+            border-bottom: 1px solid var(--border-color);
+            font-family: 'SF Mono', Consolas, monospace;
+            font-size: 0.85rem;
+        }
+
+        .oid-item:last-child {
+            border-bottom: none;
+        }
+
+        .cert-section {
+            margin-top: 1.5rem;
+        }
+
+        .cert-card {
+            background: var(--bg-tertiary);
+            border-radius: 8px;
+            padding: 1rem;
+            margin-top: 0.5rem;
+        }
+
+        .cert-field {
+            display: flex;
+            padding: 0.5rem 0;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .cert-field:last-child {
+            border-bottom: none;
+        }
+
+        .cert-label {
+            width: 150px;
+            color: var(--text-secondary);
+            flex-shrink: 0;
+        }
+
+        .cert-value {
+            word-break: break-all;
+        }
+
+        footer {
+            text-align: center;
+            padding: 2rem;
+            color: var(--text-secondary);
+            font-size: 0.85rem;
+        }
+
+        footer a {
+            color: var(--accent-blue);
+            text-decoration: none;
+        }
+
+        @media (max-width: 768px) {
+            body {
+                padding: 1rem;
+            }
+
+            .signature-header {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 0.5rem;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <header>
+            <h1>📝 PDF 签名诊断报告</h1>
+            <p class="meta">
+                <span class="file-path">{{ file_path }}</span>
+            </p>
+            <p class="meta">生成时间: {{ generated_at }}</p>
+        </header>
+
+        <!-- Whole File Hash Section -->
+        <div class="signature-card" style="margin-bottom: 1.5rem;">
+            <div class="signature-header">
+                <span class="signature-title">📄 整个文件哈希 (SHA-256)</span>
+            </div>
+            <div class="signature-body">
+                <div class="hash-row">
+                    <span class="hash-label doc">SHA-256</span>
+                    <span class="hash-value" style="word-break: break-all;">{{ file_hash }}</span>
+                </div>
+            </div>
+        </div>
+
+        {% for sig in signatures %}
+        <div class="signature-card">
+            <div class="signature-header">
+                <span class="signature-title">
+                    #{{ sig.index }} {{ sig.signer_name }}
+                </span>
+                <span
+                    class="status-badge {% if sig.is_valid %}status-valid{% elif sig.hash_valid %}status-warning{% else %}status-invalid{% endif %}">
+                    {% if sig.is_valid %}✓ Valid{% elif sig.hash_valid %}◐ Hash OK{% else %}✗ Invalid{% endif %}
+                </span>
+            </div>
+
+            <div class="signature-body">
+                <div class="info-grid">
+                    <div class="info-item">
+                        <div class="info-label">签名算法</div>
+                        <div class="info-value">{{ sig.algorithm }}</div>
+                    </div>
+                    <div class="info-item">
+                        <div class="info-label">签名日期</div>
+                        <div class="info-value">{{ sig.sign_date }}</div>
+                    </div>
+                </div>
+
+                <div class="hash-section">
+                    <div class="section-title">📊 哈希值</div>
+
+                    <div class="hash-row">
+                        <span class="hash-label doc">Doc (ByteRange)</span>
+                        <span class="hash-value">{{ sig.doc_hash }}</span>
+                    </div>
+
+                    <div class="hash-row">
+                        <span class="hash-label sig">Sig (Contents)</span>
+                        <span class="hash-value">{{ sig.sig_hash }}</span>
+                    </div>
+
+                    {% if sig.md_hash %}
+                    <div class="hash-row">
+                        <span class="hash-label md">MD (PKCS#7)</span>
+                        <span class="hash-value">{{ sig.md_hash }}</span>
+                    </div>
+                    {% endif %}
+                </div>
+
+                {% if sig.calc_hash or sig.embed_hash %}
+                <div class="verification-result {% if sig.is_valid %}verification-valid{% elif sig.signature_verification_supported or not sig.hash_valid %}verification-invalid{% else %}verification-warning{% endif %}">
+                    <div class="verification-title">
+                        {% if sig.is_valid %}
+                        ✓ 验证通过
+                        {% elif sig.signature_verification_supported %}
+                        ✗ 验证失败
+                        {% elif sig.hash_valid %}
+                        ◐ Hash OK · Signature verification not implemented (N/A)
+                        {% else %}
+                        ✗ Digest mismatch · Signature verification not implemented (N/A)
+                        {% endif %}
+                    </div>
+
+                    <div class="hash-row">
+                        <span class="hash-label calc">计算值 (Calc)</span>
+                        <span class="hash-value">{{ sig.calc_hash }}</span>
+                    </div>
+
+                    <div class="hash-row">
+                        <span class="hash-label embed">嵌入值 (Embed)</span>
+                        <span class="hash-value">{{ sig.embed_hash }}</span>
+                    </div>
+
+                    {% if sig.error %}
+                    <div style="margin-top: 0.5rem; color: {% if sig.signature_verification_supported or not sig.hash_valid %}var(--accent-red){% else %}var(--accent-yellow){% endif %};">
+                        ⚠️ {{ sig.error }}
+                    </div>
+                    {% endif %}
+                </div>
+                {% endif %}
+
+                {% if sig.oid_diagnostics %}
+                <div class="oid-section">
+                    <div class="section-title">🔑 OID 信息</div>
+                    <ul class="oid-list">
+                        <li class="oid-item">Content Type: {{ sig.oid_diagnostics.content_type }}</li>
+                        {% for alg in sig.oid_diagnostics.digest_algorithms %}
+                        <li class="oid-item">Digest Algorithm: {{ alg }}</li>
+                        {% endfor %}
+                        {% if sig.oid_diagnostics.signature_algorithm %}
+                        <li class="oid-item">Signature Algorithm: {{ sig.oid_diagnostics.signature_algorithm }}</li>
+                        {% endif %}
+                    </ul>
+                </div>
+                {% endif %}
+
+                {% if sig.certificate %}
+                <div class="cert-section">
+                    <div class="section-title">📜 证书信息</div>
+                    <div class="cert-card">
+                        <div class="cert-field">
+                            <span class="cert-label">Subject</span>
+                            <span class="cert-value">{{ sig.certificate.subject }}</span>
+                        </div>
+                        <div class="cert-field">
+                            <span class="cert-label">Issuer</span>
+                            <span class="cert-value">{{ sig.certificate.issuer }}</span>
+                        </div>
+                        <div class="cert-field">
+                            <span class="cert-label">Serial Number</span>
+                            <span class="cert-value">{{ sig.certificate.serial_number }}</span>
+                        </div>
+                        <div class="cert-field">
+                            <span class="cert-label">Signature Algorithm</span>
+                            <span class="cert-value">{{ sig.certificate.signature_algorithm }}</span>
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+        {% endfor %}
+
+        <footer>
+            <p>由 Hash Tools 生成 | <a href="https://github.com">查看源码</a></p>
+            <p
+                style="margin-top: 1rem; padding: 1rem; background: rgba(210, 153, 34, 0.1); border: 1px solid var(--accent-yellow); border-radius: 8px; color: var(--accent-yellow);">
+                ⚠️ <strong>免责声明</strong>：本报告仅供内部技术参考使用，不构成法律证据或正式鉴定结论。如需法律效力的签名验证，请咨询专业认证机构或公证机关。
+            </p>
+        </footer>
+    </div>
+</body>
+
+</html>
