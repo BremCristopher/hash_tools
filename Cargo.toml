@@ -2,9 +2,9 @@
 name = "hash_tools"
 version = "0.1.0"
 edition = "2021"
-description = "A modern file hash calculator with SM3 (信创) support"
+description = "Cross-platform file hashing and PDF signature digest analysis with SM3/SM2 support"
 license = "MIT"
-repository = "https://github.com/example/hash_tools"
+repository = "https://github.com/BremCristopher/hash_tools"
 
 [features]
 default = []

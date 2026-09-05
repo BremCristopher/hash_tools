@@ -50,6 +50,8 @@ pub enum SignatureAlgorithm {
     Sha256WithRsa,
     /// SHA-1 with RSA (legacy)
     Sha1WithRsa,
+    /// SHA-512 with RSA
+    Sha512WithRsa,
     /// SM3 with SM2 (Chinese national standard)
     Sm3WithSm2,
     /// Unknown algorithm - use the raw filter string
@@ -66,21 +68,22 @@ impl SignatureAlgorithm {
             if sf_lower.contains("sm3") || sf_lower.contains("sm2") {
                 return Self::Sm3WithSm2;
             }
+            if sf_lower.contains("sha512") {
+                return Self::Sha512WithRsa;
+            }
             if sf_lower.contains("sha256") {
                 return Self::Sha256WithRsa;
             }
             if sf_lower.contains("sha1") {
                 return Self::Sha1WithRsa;
             }
-            // Common SubFilter values - but these need OID check for actual algorithm
-            match sf {
-                "adbe.pkcs7.detached" => {
-                    // This is generic PKCS#7 - actual algorithm must be detected from OID
-                    // Return Unknown so we can detect from PKCS#7 later
-                    return Self::Unknown("pkcs7.detached".to_string());
+            // Generic CMS containers do not identify a digest or signature algorithm. Detect
+            // those from CMS SignerInfo OIDs instead of guessing from the PDF SubFilter.
+            match sf_lower.as_str() {
+                "adbe.pkcs7.detached" | "etsi.cades.detached" => {
+                    return Self::Unknown(sf.to_string());
                 }
                 "adbe.pkcs7.sha1" => return Self::Sha1WithRsa,
-                "ETSI.CAdES.detached" => return Self::Sha256WithRsa,
                 _ => {}
             }
         }
@@ -115,19 +118,23 @@ impl SignatureAlgorithm {
 
         // Get first signer info and check algorithm OID
         let signer = signed_data.signer_infos.0.as_slice().first()?;
-        let sig_oid_bytes = signer.signature_algorithm.oid.as_bytes();
+        Self::from_signature_algorithm_oid(signer.signature_algorithm.oid.as_bytes())
+    }
 
-        // Check for SM3withSM2 OID: 1.2.156.10197.1.501
-        // Encoded: 2a 81 1c ce 4d 01 81 f5 4d (but we check specific bytes)
-        let sig_oid_str = format_oid(sig_oid_bytes);
+    /// Identify known signature algorithms from the CMS SignerInfo signatureAlgorithm OID.
+    fn from_signature_algorithm_oid(oid_bytes: &[u8]) -> Option<Self> {
+        let oid = format_oid(oid_bytes);
 
-        if sig_oid_str.contains("1.2.156.10197") {
+        if oid.contains("1.2.156.10197") {
             return Some(Self::Sm3WithSm2);
         }
-        if sig_oid_str.contains("1.2.840.113549.1.1.11") {
+        if oid.contains("1.2.840.113549.1.1.11") {
             return Some(Self::Sha256WithRsa);
         }
-        if sig_oid_str.contains("1.2.840.113549.1.1.5") {
+        if oid.contains("1.2.840.113549.1.1.13") {
+            return Some(Self::Sha512WithRsa);
+        }
+        if oid.contains("1.2.840.113549.1.1.5") {
             return Some(Self::Sha1WithRsa);
         }
 
@@ -139,6 +146,7 @@ impl SignatureAlgorithm {
         match self {
             Self::Sha256WithRsa => Algorithm::Sha256,
             Self::Sha1WithRsa => Algorithm::Sha1,
+            Self::Sha512WithRsa => Algorithm::Sha512,
             Self::Sm3WithSm2 => Algorithm::Sm3,
             Self::Unknown(_) => Algorithm::Sha256, // Default fallback
         }
@@ -149,6 +157,7 @@ impl SignatureAlgorithm {
         match self {
             Self::Sha256WithRsa => "SHA256withRSA".to_string(),
             Self::Sha1WithRsa => "SHA1withRSA".to_string(),
+            Self::Sha512WithRsa => "SHA512withRSA".to_string(),
             Self::Sm3WithSm2 => "SM3withSM2".to_string(),
             Self::Unknown(s) => s.clone(),
         }
@@ -187,15 +196,34 @@ impl ByteRange {
 
     fn extract_integer(obj: &Object) -> Result<u64, PdfSignatureError> {
         match obj {
-            Object::Integer(n) => Ok(*n as u64),
-            Object::Real(n) => Ok(*n as u64),
+            Object::Integer(n) if *n >= 0 => Ok(*n as u64),
             _ => Err(PdfSignatureError::InvalidByteRange),
         }
     }
 
     /// Calculate total bytes covered by this ByteRange
-    pub fn total_bytes(&self) -> u64 {
-        self.ranges.iter().map(|(_, len)| len).sum()
+    pub fn total_bytes(&self) -> Result<u64, PdfSignatureError> {
+        self.ranges.iter().try_fold(0u64, |total, (_, length)| {
+            total
+                .checked_add(*length)
+                .ok_or(PdfSignatureError::ByteRangeOutOfBounds)
+        })
+    }
+
+    /// Check that every range has an in-file end offset without overflow.
+    fn validate_file_size(&self, file_size: u64) -> Result<(), PdfSignatureError> {
+        // Keep aggregate accounting checked as well, even though chunked reads never allocate it.
+        self.total_bytes()?;
+
+        for (offset, length) in &self.ranges {
+            let end = offset
+                .checked_add(*length)
+                .ok_or(PdfSignatureError::ByteRangeOutOfBounds)?;
+            if end > file_size {
+                return Err(PdfSignatureError::ByteRangeOutOfBounds);
+            }
+        }
+        Ok(())
     }
 }
 
@@ -322,6 +350,7 @@ impl SignatureInfo {
             SignatureAlgorithm::Sm3WithSm2 => "SM2数字签名".to_string(),
             SignatureAlgorithm::Sha256WithRsa => "RSA数字签名".to_string(),
             SignatureAlgorithm::Sha1WithRsa => "RSA-SHA1签名".to_string(),
+            SignatureAlgorithm::Sha512WithRsa => "RSA-SHA512签名".to_string(),
             SignatureAlgorithm::Unknown(_) => "数字签名".to_string(),
         }
     }
@@ -379,6 +408,23 @@ impl SignatureInfo {
         Ok(hex::encode(hash))
     }
 
+    /// Calculate SM3(Z || M) from the signed byte ranges without buffering M in memory.
+    fn calculate_sm3_with_sm2_hash_from_byte_range(
+        &self,
+        pdf_path: &Path,
+    ) -> Result<String, String> {
+        use sm3::{Digest as Sm3Digest, Sm3};
+
+        let public_key = self.extract_sm2_public_key()?;
+        let z = calculate_sm2_z_value(&public_key, b"1234567812345678");
+        let mut hasher = Sm3::new();
+        hasher.update(&z);
+        stream_byte_range_contents(pdf_path, &self.byte_range, |chunk| hasher.update(chunk))
+            .map_err(|e| e.to_string())?;
+
+        Ok(hex::encode(hasher.finalize()))
+    }
+
     /// Extract SM2 public key from PKCS#7/CMS signature contents
     fn extract_sm2_public_key(&self) -> Result<Vec<u8>, String> {
         use cms::content_info::ContentInfo;
@@ -433,14 +479,14 @@ impl SignatureInfo {
     pub fn extract_message_digest(&self) -> Result<String, String> {
         // First try DER parsing (faster, works for most signatures)
         match self.extract_message_digest_der() {
-            Ok(digest) => return Ok(digest),
-            Err(e) => {
-                // If DER fails due to indefinite length, try BER parsing
-                if e.contains("indefinite length") || e.contains("trailing data") {
-                    return self.extract_message_digest_ber();
-                }
-                return Err(e);
+            Ok(digest) => Ok(digest),
+            // If DER fails due to indefinite length, try BER parsing.
+            Err(error)
+                if error.contains("indefinite length") || error.contains("trailing data") =>
+            {
+                self.extract_message_digest_ber()
             }
+            Err(error) => Err(error),
         }
     }
 
@@ -713,22 +759,14 @@ impl SignatureInfo {
             is_valid: false,
             hash_valid: false,
             signature_valid: false,
+            signature_verification_supported: false,
             algorithm: format!("{:?}", self.algorithm),
             calculated_hash: String::new(),
             embedded_hash: String::new(),
             error: None,
         };
 
-        // Step 1: Calculate hash of ByteRange content
-        let signed_content = match self.read_signed_content(pdf_path.as_ref()) {
-            Ok(content) => content,
-            Err(e) => {
-                result.error = Some(format!("Failed to read signed content: {}", e));
-                return result;
-            }
-        };
-
-        // Step 2: First extract messageDigest to determine the correct hash algorithm
+        // Step 1: First extract messageDigest to determine the correct hash algorithm.
         // The length of the embedded hash tells us what algorithm was used
         let embedded_hash = match self.extract_message_digest() {
             Ok(h) => {
@@ -753,40 +791,33 @@ impl SignatureInfo {
             SignatureAlgorithm::Sm3WithSm2
                 | SignatureAlgorithm::Sha1WithRsa
                 | SignatureAlgorithm::Sha256WithRsa
+                | SignatureAlgorithm::Sha512WithRsa
         ) {
             self.algorithm.clone()
         } else if let Some(ref eh) = embedded_hash {
-            // Detect from hash length: 40=SHA1, 64=SHA256/SM3, 128=SHA512
+            // Detect from hash length: 40=SHA1, 64=SHA256/SM3, 128=SHA512.
             match eh.len() {
                 40 => SignatureAlgorithm::Sha1WithRsa,
                 64 => SignatureAlgorithm::Sha256WithRsa,
+                128 => SignatureAlgorithm::Sha512WithRsa,
                 _ => self.algorithm.clone(),
             }
         } else {
             self.algorithm.clone()
         };
 
-        // For messageDigest comparison, use direct hash without Z value preprocessing
-        // Z value is only used for the actual signature operation on signed attributes
-        let calculated_hash = match detected_algo {
-            SignatureAlgorithm::Sm3WithSm2 => {
-                // messageDigest = SM3(ByteRange content) - direct hash, no Z value
-                let mut hasher = libsm::sm3::hash::Sm3Hash::new(&signed_content);
-                hex::encode(hasher.get_hash())
-            }
-            SignatureAlgorithm::Sha1WithRsa => {
-                // SHA-1 for legacy
-                use sha1::{Digest, Sha1};
-                let mut hasher = Sha1::new();
-                hasher.update(&signed_content);
-                hex::encode(hasher.finalize())
-            }
-            _ => {
-                // SHA-256 for other algorithms
-                use sha2::{Digest, Sha256};
-                let mut hasher = Sha256::new();
-                hasher.update(&signed_content);
-                hex::encode(hasher.finalize())
+        // For messageDigest comparison, use the direct ByteRange hash without SM2 Z-value
+        // preprocessing. Hashing streams fixed-size chunks, so untrusted ByteRange lengths do
+        // not control allocation size.
+        let calculated_hash = match calculate_signature_hash(
+            pdf_path.as_ref(),
+            &self.byte_range,
+            detected_algo.hash_algorithm(),
+        ) {
+            Ok(hash) => hash,
+            Err(e) => {
+                result.error = Some(format!("Failed to hash signed content: {}", e));
+                return result;
             }
         };
 
@@ -800,6 +831,7 @@ impl SignatureInfo {
         // Step 3: Verify the actual signature
         if matches!(self.algorithm, SignatureAlgorithm::Sm3WithSm2) {
             // SM2 signature verification
+            result.signature_verification_supported = true;
             match self.verify_sm2_signature() {
                 Ok(valid) => {
                     result.signature_valid = valid;
@@ -811,37 +843,13 @@ impl SignatureInfo {
                 }
             }
         } else {
-            // For non-SM2 signatures (RSA), we can't cryptographically verify
-            // but if hash matches messageDigest, that's a good sign
-            result.signature_valid = result.hash_valid;
+            result.mark_signature_verification_unavailable(&detected_algo);
         }
 
         // Overall validity
         result.is_valid = result.hash_valid && result.signature_valid;
 
         result
-    }
-
-    /// Read the signed content (ByteRange) from the PDF file
-    fn read_signed_content(&self, pdf_path: &Path) -> Result<Vec<u8>, String> {
-        let mut file =
-            std::fs::File::open(pdf_path).map_err(|e| format!("Failed to open file: {}", e))?;
-
-        let mut signed_content = Vec::new();
-
-        for (offset, length) in &self.byte_range.ranges {
-            use std::io::{Read, Seek, SeekFrom};
-            file.seek(SeekFrom::Start(*offset as u64))
-                .map_err(|e| format!("Failed to seek: {}", e))?;
-
-            let mut buffer = vec![0u8; *length as usize];
-            file.read_exact(&mut buffer)
-                .map_err(|e| format!("Failed to read: {}", e))?;
-
-            signed_content.extend_from_slice(&buffer);
-        }
-
-        Ok(signed_content)
     }
 
     /// Verify SM2 signature using libsm
@@ -967,6 +975,8 @@ pub struct SignatureVerificationResult {
     pub hash_valid: bool,
     /// Whether the cryptographic signature verification passed
     pub signature_valid: bool,
+    /// Whether this algorithm has an implemented cryptographic verifier
+    pub signature_verification_supported: bool,
     /// The algorithm used
     #[allow(dead_code)]
     pub algorithm: String,
@@ -976,6 +986,23 @@ pub struct SignatureVerificationResult {
     pub embedded_hash: String,
     /// Any error message
     pub error: Option<String>,
+}
+
+impl SignatureVerificationResult {
+    /// Preserve a matching messageDigest while preventing it from being presented as a
+    /// cryptographic signature verification result.
+    fn mark_signature_verification_unavailable(&mut self, algorithm: &SignatureAlgorithm) {
+        self.signature_verification_supported = false;
+        self.signature_valid = false;
+        self.is_valid = false;
+
+        if self.hash_valid && self.error.is_none() {
+            self.error = Some(format!(
+                "Cryptographic signature verification is unavailable for {}; messageDigest matches",
+                algorithm.display_name()
+            ));
+        }
+    }
 }
 
 /// Format OID bytes as dotted decimal string
@@ -1295,31 +1322,28 @@ pub fn extract_annotation_hashes<P: AsRef<Path>>(
                 if let Some(ref nm) = annot_name {
                     if nm.contains("VISIBLE") || nm.contains("-") {
                         // Try to get /AP/N stream
-                        if let Ok(ap) = dict.get(b"AP") {
-                            if let Object::Dictionary(ap_dict) = ap {
-                                if let Ok(n) = ap_dict.get(b"N") {
-                                    let stream_data = match n {
-                                        Object::Reference(ref_id) => {
-                                            if let Ok(Object::Stream(s)) = doc.get_object(*ref_id) {
-                                                Some((ref_id.0, s.content.clone()))
-                                            } else {
-                                                None
-                                            }
+                        if let Ok(Object::Dictionary(ap_dict)) = dict.get(b"AP") {
+                            if let Ok(n) = ap_dict.get(b"N") {
+                                let stream_data = match n {
+                                    Object::Reference(ref_id) => {
+                                        if let Ok(Object::Stream(s)) = doc.get_object(*ref_id) {
+                                            Some((ref_id.0, s.content.clone()))
+                                        } else {
+                                            None
                                         }
-                                        Object::Stream(s) => Some((object_id.0, s.content.clone())),
-                                        _ => None,
-                                    };
+                                    }
+                                    Object::Stream(s) => Some((object_id.0, s.content.clone())),
+                                    _ => None,
+                                };
 
-                                    if let Some((stream_id, content)) = stream_data {
-                                        if !content.is_empty() {
-                                            let mut hasher =
-                                                libsm::sm3::hash::Sm3Hash::new(&content);
-                                            let hash = hasher.get_hash();
-                                            hashes.push((
-                                                format!("{} @{}", nm, stream_id),
-                                                hex::encode(hash),
-                                            ));
-                                        }
+                                if let Some((stream_id, content)) = stream_data {
+                                    if !content.is_empty() {
+                                        let mut hasher = libsm::sm3::hash::Sm3Hash::new(&content);
+                                        let hash = hasher.get_hash();
+                                        hashes.push((
+                                            format!("{} @{}", nm, stream_id),
+                                            hex::encode(hash),
+                                        ));
                                     }
                                 }
                             }
@@ -1340,82 +1364,72 @@ pub fn extract_annotation_hashes<P: AsRef<Path>>(
 /// This function reads directly from the raw binary file, NOT from lopdf's
 /// parsed representation. This is critical because PDF parsers may normalize
 /// content which would change the hash.
+const BYTE_RANGE_CHUNK_SIZE: usize = 64 * 1024;
+
+/// Visit each ByteRange byte sequence without allocating based on PDF-controlled lengths.
+fn stream_byte_range_contents<F>(
+    path: &Path,
+    byte_range: &ByteRange,
+    mut consume: F,
+) -> Result<(), PdfSignatureError>
+where
+    F: FnMut(&[u8]),
+{
+    let file_size = fs::metadata(path)?.len();
+    byte_range.validate_file_size(file_size)?;
+
+    let mut file = fs::File::open(path)?;
+    let mut buffer = [0u8; BYTE_RANGE_CHUNK_SIZE];
+
+    for (offset, length) in &byte_range.ranges {
+        file.seek(SeekFrom::Start(*offset))?;
+        let mut remaining = *length;
+        while remaining > 0 {
+            let chunk_len = remaining.min(BYTE_RANGE_CHUNK_SIZE as u64) as usize;
+            file.read_exact(&mut buffer[..chunk_len])?;
+            consume(&buffer[..chunk_len]);
+            remaining -= chunk_len as u64;
+        }
+    }
+
+    Ok(())
+}
+
+fn calculate_byte_range_digest<D>(
+    path: &Path,
+    byte_range: &ByteRange,
+) -> Result<String, PdfSignatureError>
+where
+    D: Digest + Default,
+{
+    let mut hasher = D::default();
+    stream_byte_range_contents(path, byte_range, |chunk| hasher.update(chunk))?;
+    Ok(hex::encode(hasher.finalize()))
+}
+
 pub fn calculate_signature_hash<P: AsRef<Path>>(
     pdf_path: P,
     byte_range: &ByteRange,
     algorithm: Algorithm,
 ) -> Result<String, PdfSignatureError> {
     let path = pdf_path.as_ref();
-    let file_size = fs::metadata(path)?.len();
 
-    // Validate byte ranges don't exceed file size
-    for (offset, length) in &byte_range.ranges {
-        if offset + length > file_size {
-            return Err(PdfSignatureError::ByteRangeOutOfBounds);
-        }
-    }
-
-    // Read the raw bytes from each range
-    let mut file = fs::File::open(path)?;
-    let mut signed_content = Vec::with_capacity(byte_range.total_bytes() as usize);
-
-    for (offset, length) in &byte_range.ranges {
-        file.seek(SeekFrom::Start(*offset))?;
-        let mut buffer = vec![0u8; *length as usize];
-        file.read_exact(&mut buffer)?;
-        signed_content.extend(buffer);
-    }
-
-    // Calculate hash based on algorithm
-    let hash = match algorithm {
-        Algorithm::Sha256 => {
-            let mut hasher = Sha256::new();
-            hasher.update(&signed_content);
-            format!("{:x}", hasher.finalize())
-        }
-        Algorithm::Sha512 => {
-            use sha2::Sha512;
-            let mut hasher = Sha512::new();
-            hasher.update(&signed_content);
-            format!("{:x}", hasher.finalize())
-        }
-        Algorithm::Sha3_256 => {
-            use sha3::Sha3_256;
-            let mut hasher = Sha3_256::new();
-            hasher.update(&signed_content);
-            format!("{:x}", hasher.finalize())
-        }
-        Algorithm::Sha3_512 => {
-            use sha3::Sha3_512;
-            let mut hasher = Sha3_512::new();
-            hasher.update(&signed_content);
-            format!("{:x}", hasher.finalize())
-        }
-        Algorithm::Sha1 => {
-            use sha1::Sha1;
-            let mut hasher = Sha1::new();
-            hasher.update(&signed_content);
-            format!("{:x}", hasher.finalize())
-        }
-        Algorithm::Md5 => {
-            use md5::Md5;
-            let mut hasher = Md5::new();
-            hasher.update(&signed_content);
-            format!("{:x}", hasher.finalize())
-        }
+    match algorithm {
+        Algorithm::Sha256 => calculate_byte_range_digest::<Sha256>(path, byte_range),
+        Algorithm::Sha512 => calculate_byte_range_digest::<sha2::Sha512>(path, byte_range),
+        Algorithm::Sha3_256 => calculate_byte_range_digest::<sha3::Sha3_256>(path, byte_range),
+        Algorithm::Sha3_512 => calculate_byte_range_digest::<sha3::Sha3_512>(path, byte_range),
+        Algorithm::Sha1 => calculate_byte_range_digest::<sha1::Sha1>(path, byte_range),
+        Algorithm::Md5 => calculate_byte_range_digest::<md5::Md5>(path, byte_range),
         Algorithm::Blake3 => {
-            let hash = blake3::hash(&signed_content);
-            hash.to_hex().to_string()
+            let mut hasher = blake3::Hasher::new();
+            stream_byte_range_contents(path, byte_range, |chunk| {
+                hasher.update(chunk);
+            })?;
+            Ok(hasher.finalize().to_hex().to_string())
         }
-        Algorithm::Sm3 => {
-            use sm3::{Digest as Sm3Digest, Sm3};
-            let mut hasher = Sm3::new();
-            hasher.update(&signed_content);
-            format!("{:x}", hasher.finalize())
-        }
-    };
-
-    Ok(hash)
+        Algorithm::Sm3 => calculate_byte_range_digest::<sm3::Sm3>(path, byte_range),
+    }
 }
 
 /// Convenience function to get all signature hashes from a PDF
@@ -1470,52 +1484,9 @@ pub fn get_all_signature_hashes_with_override<P: AsRef<Path> + Sync>(
             // Determine which algorithm to use and calculate hash
             let hash = match override_algo {
                 crate::PdfHashOverride::ForceSm3WithSm2 => {
-                    // Special case: use SM3(Z || M) calculation
-                    // Read the ByteRange content for the message M
-                    let file_size = match std::fs::metadata(pdf_path.as_ref()) {
-                        Ok(m) => m.len(),
-                        Err(e) => return (sig, format!("Error: {}", e)),
-                    };
-
-                    // Validate ByteRange
-                    let byte_range_valid = sig
-                        .byte_range
-                        .ranges
-                        .iter()
-                        .all(|(offset, length)| offset + length <= file_size);
-
-                    if !byte_range_valid {
-                        return (sig, "Error: File modified (ByteRange invalid)".to_string());
-                    }
-
-                    let mut file = match std::fs::File::open(pdf_path.as_ref()) {
-                        Ok(f) => f,
-                        Err(e) => return (sig, format!("Error: {}", e)),
-                    };
-
-                    let mut signed_content = Vec::new();
-                    let mut read_error = None;
-                    for (offset, length) in &sig.byte_range.ranges {
-                        if file.seek(std::io::SeekFrom::Start(*offset)).is_err() {
-                            read_error = Some("seek failed");
-                            break;
-                        }
-                        let mut buffer = vec![0u8; *length as usize];
-                        if file.read_exact(&mut buffer).is_err() {
-                            read_error = Some("read failed");
-                            break;
-                        }
-                        signed_content.extend(buffer);
-                    }
-
-                    if let Some(err) = read_error {
-                        format!("Error: {}", err)
-                    } else {
-                        // Calculate SM3(Z || M)
-                        match sig.calculate_sm3_with_sm2_hash(&signed_content) {
-                            Ok(h) => h,
-                            Err(e) => format!("Error: {}", e),
-                        }
+                    match sig.calculate_sm3_with_sm2_hash_from_byte_range(pdf_path.as_ref()) {
+                        Ok(hash) => hash,
+                        Err(error) => format!("Error: {}", error),
                     }
                 }
                 _ => {
@@ -1544,6 +1515,21 @@ pub fn get_all_signature_hashes_with_override<P: AsRef<Path> + Sync>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn write_synthetic_input(bytes: &[u8]) -> std::path::PathBuf {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock before Unix epoch")
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!(
+            "hash-tools-byte-range-{}-{}.bin",
+            std::process::id(),
+            unique
+        ));
+        fs::write(&path, bytes).expect("write synthetic byte-range input");
+        path
+    }
 
     #[test]
     fn test_byte_range_parsing() {
@@ -1558,7 +1544,7 @@ mod tests {
         assert_eq!(byte_range.ranges.len(), 2);
         assert_eq!(byte_range.ranges[0], (0, 500));
         assert_eq!(byte_range.ranges[1], (700, 1000));
-        assert_eq!(byte_range.total_bytes(), 1500);
+        assert_eq!(byte_range.total_bytes().unwrap(), 1500);
     }
 
     #[test]
@@ -1571,5 +1557,127 @@ mod tests {
         ]);
 
         assert!(ByteRange::from_object(&obj).is_err());
+    }
+
+    #[test]
+    fn cades_metadata_requires_cms_oid_detection() {
+        assert!(matches!(
+            SignatureAlgorithm::from_pdf_filters(None, Some("ETSI.CAdES.detached")),
+            SignatureAlgorithm::Unknown(sub_filter) if sub_filter == "ETSI.CAdES.detached"
+        ));
+
+        // rsaEncryption with SHA-512 OID: 1.2.840.113549.1.1.13
+        assert_eq!(
+            SignatureAlgorithm::from_signature_algorithm_oid(&[
+                0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x01, 0x01, 0x0d,
+            ]),
+            Some(SignatureAlgorithm::Sha512WithRsa)
+        );
+    }
+
+    #[test]
+    fn byte_range_rejects_negative_and_non_integer_values() {
+        let negative = Object::Array(vec![
+            Object::Integer(0),
+            Object::Integer(5),
+            Object::Integer(-1),
+            Object::Integer(2),
+        ]);
+        let real = Object::Array(vec![
+            Object::Integer(0),
+            Object::Integer(5),
+            Object::Real(7.0),
+            Object::Integer(2),
+        ]);
+
+        assert!(matches!(
+            ByteRange::from_object(&negative),
+            Err(PdfSignatureError::InvalidByteRange)
+        ));
+        assert!(matches!(
+            ByteRange::from_object(&real),
+            Err(PdfSignatureError::InvalidByteRange)
+        ));
+    }
+
+    #[test]
+    fn byte_range_hash_rejects_out_of_bounds_and_overflow() {
+        let path = write_synthetic_input(b"01234567");
+        let out_of_bounds = ByteRange {
+            ranges: vec![(7, 2)],
+        };
+        let overflow = ByteRange {
+            ranges: vec![(u64::MAX, 1)],
+        };
+
+        assert!(matches!(
+            calculate_signature_hash(&path, &out_of_bounds, Algorithm::Sha256),
+            Err(PdfSignatureError::ByteRangeOutOfBounds)
+        ));
+        assert!(matches!(
+            calculate_signature_hash(&path, &overflow, Algorithm::Sha256),
+            Err(PdfSignatureError::ByteRangeOutOfBounds)
+        ));
+
+        fs::remove_file(path).expect("remove synthetic byte-range input");
+    }
+
+    #[test]
+    fn byte_range_rejects_total_length_overflow() {
+        let byte_range = ByteRange {
+            ranges: vec![(0, u64::MAX), (0, 1)],
+        };
+
+        assert!(matches!(
+            byte_range.total_bytes(),
+            Err(PdfSignatureError::ByteRangeOutOfBounds)
+        ));
+    }
+
+    #[test]
+    fn byte_range_hash_streams_multiple_chunks() {
+        let mut bytes = vec![b'a'; BYTE_RANGE_CHUNK_SIZE + 17];
+        bytes.extend_from_slice(b"suffix");
+        let path = write_synthetic_input(&bytes);
+        let byte_range = ByteRange {
+            ranges: vec![
+                (0, BYTE_RANGE_CHUNK_SIZE as u64 + 17),
+                (bytes.len() as u64 - 6, 6),
+            ],
+        };
+        let mut expected_bytes = vec![b'a'; BYTE_RANGE_CHUNK_SIZE + 17];
+        expected_bytes.extend_from_slice(b"suffix");
+
+        assert_eq!(
+            calculate_signature_hash(&path, &byte_range, Algorithm::Sha256).unwrap(),
+            calculate_hash_of_bytes(&expected_bytes, Algorithm::Sha256)
+        );
+
+        fs::remove_file(path).expect("remove synthetic byte-range input");
+    }
+
+    #[test]
+    fn non_sm2_digest_match_is_not_a_signature_verification() {
+        let mut result = SignatureVerificationResult {
+            is_valid: true,
+            hash_valid: true,
+            signature_valid: true,
+            signature_verification_supported: true,
+            algorithm: "Sha256WithRsa".to_string(),
+            calculated_hash: "a".repeat(64),
+            embedded_hash: "a".repeat(64),
+            error: None,
+        };
+
+        result.mark_signature_verification_unavailable(&SignatureAlgorithm::Sha256WithRsa);
+
+        assert!(result.hash_valid);
+        assert!(!result.signature_verification_supported);
+        assert!(!result.signature_valid);
+        assert!(!result.is_valid);
+        assert!(result
+            .error
+            .as_deref()
+            .is_some_and(|error| error.contains("messageDigest matches")));
     }
 }

@@ -35,6 +35,7 @@ struct SignatureData {
     embed_hash: String,
     is_valid: bool,
     hash_valid: bool,
+    signature_verification_supported: bool,
     error: Option<String>,
     oid_diagnostics: Option<OidDiagnosticsData>,
     certificate: Option<CertificateData>,
@@ -162,6 +163,7 @@ fn export_diagnostics_report(
             embed_hash: verification.embedded_hash.clone(),
             is_valid: verification.is_valid,
             hash_valid: verification.hash_valid,
+            signature_verification_supported: verification.signature_verification_supported,
             error: verification.error.clone(),
             oid_diagnostics,
             certificate,
@@ -433,7 +435,9 @@ fn build_signature_details(
             let verify_detail_text = format!(
                 "Hash: {} | Sig: {} | Calc: {} | Embed: {}{}",
                 if verification.hash_valid { "OK" } else { "X" },
-                if verification.signature_valid {
+                if !verification.signature_verification_supported {
+                    "N/A"
+                } else if verification.signature_valid {
                     "OK"
                 } else {
                     "X"
@@ -446,7 +450,9 @@ fn build_signature_details(
             let verify_detail_copy_text = format!(
                 "Hash: {} | Sig: {} | Calc: {} | Embed: {}{}",
                 if verification.hash_valid { "OK" } else { "X" },
-                if verification.signature_valid {
+                if !verification.signature_verification_supported {
+                    "N/A"
+                } else if verification.signature_valid {
                     "OK"
                 } else {
                     "X"
@@ -922,17 +928,13 @@ impl HashApp {
                 self.show_quick_menu = false;
                 self.show_toast("Exporting diagnostics report...", ToastKind::Info);
                 // Export diagnostics report
-                if let Some(path) = &self.current_file {
-                    if let Some(ref sigs_result) = self.pdf_signatures {
-                        if let Ok(sigs) = sigs_result {
-                            let path_clone = path.clone();
-                            let sigs_clone = sigs.clone();
-                            return Task::perform(
-                                async move { export_diagnostics_report(&path_clone, &sigs_clone) },
-                                Message::ExportComplete,
-                            );
-                        }
-                    }
+                if let (Some(path), Some(Ok(sigs))) = (&self.current_file, &self.pdf_signatures) {
+                    let path_clone = path.clone();
+                    let sigs_clone = sigs.clone();
+                    return Task::perform(
+                        async move { export_diagnostics_report(&path_clone, &sigs_clone) },
+                        Message::ExportComplete,
+                    );
                 }
             }
             Message::ExportComplete(result) => {
@@ -1840,5 +1842,74 @@ impl HashApp {
             }),
             iced::time::every(Duration::from_millis(16)).map(Message::AnimationTick),
         ])
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn diagnostics_report_marks_unimplemented_verification_and_escapes_fields() {
+        let mut tera = Tera::default();
+        tera.add_raw_template(
+            "report.html",
+            include_str!("../templates/diagnostics_report.html"),
+        )
+        .expect("add diagnostics template");
+
+        let mut context = Context::new();
+        context.insert("file_path", "<unsafe.pdf>");
+        context.insert("generated_at", "2026-09-05 12:00:00");
+        context.insert("file_hash", "file-hash");
+        context.insert(
+            "signatures",
+            &vec![
+                SignatureData {
+                    index: 1,
+                    signer_name: "<script>alert(1)</script>".to_string(),
+                    algorithm: "SHA256withRSA".to_string(),
+                    sign_date: "Unknown".to_string(),
+                    doc_hash: "doc-hash".to_string(),
+                    sig_hash: "signature-hash".to_string(),
+                    md_hash: Some("embedded-hash".to_string()),
+                    calc_hash: "calculated-hash".to_string(),
+                    embed_hash: "embedded-hash".to_string(),
+                    is_valid: false,
+                    hash_valid: true,
+                    signature_verification_supported: false,
+                    error: Some("Cryptographic verification is unavailable".to_string()),
+                    oid_diagnostics: None,
+                    certificate: None,
+                },
+                SignatureData {
+                    index: 2,
+                    signer_name: "Digest mismatch".to_string(),
+                    algorithm: "SHA256withRSA".to_string(),
+                    sign_date: "Unknown".to_string(),
+                    doc_hash: "doc-hash".to_string(),
+                    sig_hash: "signature-hash".to_string(),
+                    md_hash: Some("embedded-hash".to_string()),
+                    calc_hash: "different-hash".to_string(),
+                    embed_hash: "embedded-hash".to_string(),
+                    is_valid: false,
+                    hash_valid: false,
+                    signature_verification_supported: false,
+                    error: Some("messageDigest does not match".to_string()),
+                    oid_diagnostics: None,
+                    certificate: None,
+                },
+            ],
+        );
+
+        let html = tera
+            .render("report.html", &context)
+            .expect("render diagnostics");
+
+        assert!(html.contains("Hash OK · Signature verification not implemented (N/A)"));
+        assert!(html.contains("Digest mismatch · Signature verification not implemented (N/A)"));
+        assert!(!html.contains("验证失败"));
+        assert!(html.contains("&lt;script&gt;alert(1)&lt;&#x2F;script&gt;"));
+        assert!(!html.contains("<script>alert(1)</script>"));
     }
 }

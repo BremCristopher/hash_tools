@@ -212,6 +212,11 @@
             border: 1px solid var(--accent-red);
         }
 
+        .verification-warning {
+            background: rgba(210, 153, 34, 0.1);
+            border: 1px solid var(--accent-yellow);
+        }
+
         .verification-title {
             font-weight: 600;
             margin-bottom: 0.5rem;
@@ -226,6 +231,10 @@
 
         .verification-invalid .verification-title {
             color: var(--accent-red);
+        }
+
+        .verification-warning .verification-title {
+            color: var(--accent-yellow);
         }
 
         .oid-section {
@@ -376,10 +385,17 @@
                 </div>
 
                 {% if sig.calc_hash or sig.embed_hash %}
-                <div
-                    class="verification-result {% if sig.is_valid %}verification-valid{% else %}verification-invalid{% endif %}">
+                <div class="verification-result {% if sig.is_valid %}verification-valid{% elif sig.signature_verification_supported or not sig.hash_valid %}verification-invalid{% else %}verification-warning{% endif %}">
                     <div class="verification-title">
-                        {% if sig.is_valid %}✓ 验证通过{% else %}✗ 验证失败{% endif %}
+                        {% if sig.is_valid %}
+                        ✓ 验证通过
+                        {% elif sig.signature_verification_supported %}
+                        ✗ 验证失败
+                        {% elif sig.hash_valid %}
+                        ◐ Hash OK · Signature verification not implemented (N/A)
+                        {% else %}
+                        ✗ Digest mismatch · Signature verification not implemented (N/A)
+                        {% endif %}
                     </div>
 
                     <div class="hash-row">
@@ -393,7 +409,7 @@
                     </div>
 
                     {% if sig.error %}
-                    <div style="margin-top: 0.5rem; color: var(--accent-red);">
+                    <div style="margin-top: 0.5rem; color: {% if sig.signature_verification_supported or not sig.hash_valid %}var(--accent-red){% else %}var(--accent-yellow){% endif %};">
                         ⚠️ {{ sig.error }}
                     </div>
                     {% endif %}
