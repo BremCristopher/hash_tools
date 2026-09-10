@@ -179,7 +179,7 @@ fn export_diagnostics_report(
         Ok(data) => {
             use sha2::{Digest, Sha256};
             let hash = Sha256::digest(&data);
-            format!("{:x}", hash)
+            hex::encode(hash)
         }
         Err(_) => "Unable to calculate".to_string(),
     };
@@ -1848,6 +1848,11 @@ impl HashApp {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn embedded_icon_decodes_into_window_icon() {
+        assert!(load_window_icon().is_some());
+    }
 
     #[test]
     fn diagnostics_report_marks_unimplemented_verification_and_escapes_fields() {

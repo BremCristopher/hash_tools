@@ -12,28 +12,29 @@ _windows_build = []
 
 [dependencies]
 iced = { version = "0.14.0", features = ["tokio", "advanced", "canvas", "svg"] }
-tokio = { version = "1", features = ["fs", "io-util", "rt-multi-thread", "macros"] }
-rfd = "0.15"
+tokio = { version = "1.53.1", features = ["fs", "io-util", "rt-multi-thread", "macros"] }
+rfd = "0.17.2"
 hex = "0.4"
-sha1 = "0.10"
-sha2 = "0.10"
-sha3 = "0.10"
-md-5 = "0.10"
-blake3 = "1.5"
-anyhow = "1.0"
-thiserror = "2.0"
-sm3 = "0.4.2"
-lopdf = "0.34"
-libsm = "0.6"           # SM2/SM3/SM4 Chinese national crypto
+sha1 = "0.11"
+sha2 = "0.11"
+sha3 = "0.12"
+md-5 = "0.11"
+blake3 = "1.8.7"
+anyhow = "1.0.104"
+thiserror = "2.0.20"
+sm3 = "0.5"
+lopdf = "0.45"
+libsm = "0.6.1"         # SM2/SM3/SM4 Chinese national crypto
 cms = "0.2"             # PKCS#7/CMS parsing
 x509-cert = "0.2"       # X.509 certificate parsing
 der = "0.7"             # DER encoding/decoding
-chrono = "0.4.42"
-asn1-rs = "0.7.1"
+chrono = "0.4.45"
+asn1-rs = "0.7.2"
 tera = "1.20.1"
-serde = { version = "1.0.228", features = ["derive"] }
-image = "0.25.9"
-rayon = "1.10"
+serde = { version = "1.0.229", features = ["derive"] }
+# icon.png contains JPEG bytes; retain both codecs without unused AVIF/EXR encoders.
+image = { version = "0.25.10", default-features = false, features = ["png", "jpeg"] }
+rayon = "1.12"
 
 # Windows-specific metadata for executable
 [package.metadata.winres]
@@ -50,4 +51,4 @@ opt-level = "z"
 
 # Build dependencies (for Windows resource embedding)
 [build-dependencies]
-winresource = "0.1"
+winresource = "0.1.31"

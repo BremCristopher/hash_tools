@@ -1190,37 +1190,37 @@ pub fn calculate_hash_of_bytes(data: &[u8], algorithm: Algorithm) -> String {
         Algorithm::Sha256 => {
             let mut hasher = Sha256::new();
             hasher.update(data);
-            format!("{:x}", hasher.finalize())
+            hex::encode(hasher.finalize())
         }
         Algorithm::Sha512 => {
             use sha2::Sha512;
             let mut hasher = Sha512::new();
             hasher.update(data);
-            format!("{:x}", hasher.finalize())
+            hex::encode(hasher.finalize())
         }
         Algorithm::Sha3_256 => {
             use sha3::Sha3_256;
             let mut hasher = Sha3_256::new();
             hasher.update(data);
-            format!("{:x}", hasher.finalize())
+            hex::encode(hasher.finalize())
         }
         Algorithm::Sha3_512 => {
             use sha3::Sha3_512;
             let mut hasher = Sha3_512::new();
             hasher.update(data);
-            format!("{:x}", hasher.finalize())
+            hex::encode(hasher.finalize())
         }
         Algorithm::Sha1 => {
             use sha1::Sha1;
             let mut hasher = Sha1::new();
             hasher.update(data);
-            format!("{:x}", hasher.finalize())
+            hex::encode(hasher.finalize())
         }
         Algorithm::Md5 => {
             use md5::Md5;
             let mut hasher = Md5::new();
             hasher.update(data);
-            format!("{:x}", hasher.finalize())
+            hex::encode(hasher.finalize())
         }
         Algorithm::Blake3 => {
             let hash = blake3::hash(data);
@@ -1230,7 +1230,7 @@ pub fn calculate_hash_of_bytes(data: &[u8], algorithm: Algorithm) -> String {
             use sm3::{Digest as Sm3Digest, Sm3};
             let mut hasher = Sm3::new();
             hasher.update(data);
-            format!("{:x}", hasher.finalize())
+            hex::encode(hasher.finalize())
         }
     }
 }
@@ -1648,12 +1648,179 @@ mod tests {
         let mut expected_bytes = vec![b'a'; BYTE_RANGE_CHUNK_SIZE + 17];
         expected_bytes.extend_from_slice(b"suffix");
 
-        assert_eq!(
-            calculate_signature_hash(&path, &byte_range, Algorithm::Sha256).unwrap(),
-            calculate_hash_of_bytes(&expected_bytes, Algorithm::Sha256)
-        );
+        for &algorithm in Algorithm::all() {
+            assert_eq!(
+                calculate_signature_hash(&path, &byte_range, algorithm).unwrap(),
+                calculate_hash_of_bytes(&expected_bytes, algorithm),
+                "{algorithm}"
+            );
+        }
 
         fs::remove_file(path).expect("remove synthetic byte-range input");
+    }
+
+    #[tokio::test]
+    async fn supported_digest_known_answer_vectors() {
+        let input = b"abc";
+        let expected = [
+            (
+                Algorithm::Sha256,
+                "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+            ),
+            (
+                Algorithm::Sha512,
+                "ddaf35a193617abacc417349ae20413112e6fa4e89a97ea20a9eeee64b55d39a2192992a274fc1a836ba3c23a3feebbd454d4423643ce80e2a9ac94fa54ca49f",
+            ),
+            (
+                Algorithm::Sha3_256,
+                "3a985da74fe225b2045c172d6bd390bd855f086e3e9d525b46bfe24511431532",
+            ),
+            (
+                Algorithm::Sha3_512,
+                "b751850b1a57168a5693cd924b6b096e08f621827444f70d884f5d0240d2712e10e116e9192af3c91a7ec57647e3934057340b4cf408d5a56592f8274eec53f0",
+            ),
+            (Algorithm::Md5, "900150983cd24fb0d6963f7d28e17f72"),
+            (Algorithm::Sha1, "a9993e364706816aba3e25717850c26c9cd0d89d"),
+            (
+                Algorithm::Blake3,
+                "6437b3ac38465133ffb63b75273a8db548c558465d79db03fd359c6cd5bd9d85",
+            ),
+            (
+                Algorithm::Sm3,
+                "66c7f0f462eeedd9d1f2d46bdc10e4e24167c4875cf2f7a2297da02b8f4ba8e0",
+            ),
+        ];
+
+        let file_path = write_synthetic_input(input);
+        let range_path = write_synthetic_input(b"a<excluded>bc");
+        let byte_range = ByteRange {
+            ranges: vec![(0, 1), (11, 2)],
+        };
+        for (algorithm, digest) in expected {
+            assert_eq!(
+                calculate_hash_of_bytes(input, algorithm),
+                digest,
+                "{algorithm}"
+            );
+            assert_eq!(
+                crate::hash_logic::compute_hash(&file_path, algorithm)
+                    .await
+                    .unwrap(),
+                digest,
+                "{algorithm}"
+            );
+            assert_eq!(
+                calculate_signature_hash(&range_path, &byte_range, algorithm).unwrap(),
+                digest,
+                "{algorithm}"
+            );
+        }
+        fs::remove_file(file_path).unwrap();
+        fs::remove_file(range_path).unwrap();
+    }
+
+    #[test]
+    fn sm2_default_id_z_and_der_signature_known_answer() {
+        // Public SM2 "message digest" test vector; no private key is required.
+        let public_key = hex::decode(concat!(
+            "04",
+            "09f9df311e5421a150dd7d161e4bc5c672179fad1833fc076bb08ff356f35020",
+            "ccea490ce26775a52dc6ea718cc1aa600aed05fbf35e084a6632f6072da9ad13"
+        ))
+        .unwrap();
+        let signature_der = hex::decode(concat!(
+            "3046022100f5a03b0648d2c4630eeac513e1bb81a15944da3827d5b74143ac7eaceee720b3",
+            "022100b1b6aa29df212fd8763182bc0d421ca1bb9038fd1f7f42d4840b69c485bbc1aa"
+        ))
+        .unwrap();
+        let expected_z = "b2e14c5c79c6df5b85f4fe7ed8db7a262b9da7e07ccb0ea9f4747b8ccda8a4f3";
+        assert_eq!(
+            hex::encode(calculate_sm2_z_value(&public_key, b"1234567812345678")),
+            expected_z
+        );
+        assert_eq!(
+            hex::encode(calculate_sm2_z_value(&public_key[1..], b"1234567812345678")),
+            expected_z
+        );
+        assert_ne!(
+            calculate_sm2_z_value(&public_key, b"another user"),
+            hex::decode(expected_z).unwrap()
+        );
+
+        let context = libsm::sm2::signature::SigCtx::new();
+        let point = context.load_pubkey(&public_key).unwrap();
+        let signature = libsm::sm2::signature::Signature::der_decode(&signature_der).unwrap();
+        assert_eq!(signature.der_encode(), signature_der);
+        assert!(context
+            .verify(b"message digest", &point, &signature)
+            .unwrap());
+        assert!(!context
+            .verify(b"message digesu", &point, &signature)
+            .unwrap());
+        // verify() must receive the message, not an already Z-prefixed digest.
+        let digest = context
+            .hash("1234567812345678", &point, b"message digest")
+            .unwrap();
+        assert!(!context.verify(&digest, &point, &signature).unwrap());
+        assert!(libsm::sm2::signature::Signature::der_decode(&signature_der[2..]).is_err());
+    }
+
+    #[test]
+    fn pdf_parser_preserves_signature_contents_and_raw_ranges() {
+        // Construct bytes directly, not via lopdf's writer: parser upgrades must not
+        // normalize the signed input or change literal/hex /Contents extraction.
+        let mut pdf = b"%PDF-1.4\r\n".to_vec();
+        let objects = [
+            "<< /Type /Catalog /Pages 2 0 R >>",
+            "<< /Type /Pages /Kids [] /Count 0 >>",
+            "<< /Type /Sig /ByteRange [0 5 7 2] /Contents <30030201010000> /SubFilter /SM3withSM2 /Name (Synthetic signer) /Reason (Testing) /Location (Local) /M (D:20250101000000Z) >>",
+            "<< /ByteRange [0 5 7 2] /Contents (\\060\\003\\002\\001\\001\\000\\000) /SubFilter /adbe.pkcs7.detached >>",
+        ];
+        let mut offsets = Vec::new();
+        for (index, object) in objects.iter().enumerate() {
+            offsets.push(pdf.len());
+            pdf.extend_from_slice(
+                format!("{} 0 obj\r\n{}\r\nendobj\r\n", index + 1, object).as_bytes(),
+            );
+        }
+        let xref_offset = pdf.len();
+        pdf.extend_from_slice(b"xref\r\n0 5\r\n0000000000 65535 f\r\n");
+        for offset in offsets {
+            pdf.extend_from_slice(format!("{offset:010} 00000 n\r\n").as_bytes());
+        }
+        pdf.extend_from_slice(
+            format!(
+                "trailer\r\n<< /Size 5 /Root 1 0 R >>\r\nstartxref\r\n{xref_offset}\r\n%%EOF\r\n"
+            )
+            .as_bytes(),
+        );
+        let path = write_synthetic_input(&pdf);
+        let signatures = extract_signatures(&path).unwrap();
+        assert_eq!(signatures.len(), 2);
+        for signature in &signatures {
+            assert_eq!(signature.byte_range.ranges, vec![(0, 5), (7, 2)]);
+            assert_eq!(signature.signature_contents, [0x30, 3, 2, 1, 1, 0, 0]);
+            assert_eq!(
+                calculate_signature_hash(&path, &signature.byte_range, Algorithm::Sha256).unwrap(),
+                calculate_hash_of_bytes(b"%PDF-4\r", Algorithm::Sha256)
+            );
+        }
+        assert_eq!(signatures[0].algorithm, SignatureAlgorithm::Sm3WithSm2);
+        assert_eq!(
+            signatures[0].signer_name.as_deref(),
+            Some("Synthetic signer")
+        );
+        assert_eq!(signatures[0].reason.as_deref(), Some("Testing"));
+        assert_eq!(signatures[0].location.as_deref(), Some("Local"));
+        assert_eq!(
+            signatures[0].sign_date.as_deref(),
+            Some("D:20250101000000Z")
+        );
+        assert_eq!(
+            signatures[1].algorithm,
+            SignatureAlgorithm::Unknown("adbe.pkcs7.detached".into())
+        );
+        fs::remove_file(path).unwrap();
     }
 
     #[test]
